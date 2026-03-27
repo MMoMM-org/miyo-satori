@@ -4,6 +4,12 @@
   "description": "MCP gateway server for context management and downstream tool routing",
   "type": "module",
   "main": "dist/src/index.js",
+  "files": [
+    "dist/src",
+    "dist/hooks",
+    ".claude-plugin",
+    "satori.toml.example"
+  ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",

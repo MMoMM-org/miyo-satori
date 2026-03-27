@@ -1,0 +1,35 @@
+# satori.toml — place at repo root (or ~/.satori/config.toml for global)
+# g/p/r merge: global -> project -> repo; repo-level [[servers]] wins by name
+
+[gateway]
+# auto_register_mcp_json = false   # import .mcp.json servers at startup
+
+[context]
+# db_path = ".satori/db.sqlite"    # relative to repo root
+# session_guide_max_bytes = 2048   # max XML snapshot size
+# retain_days = 30                 # prune captures older than N days
+
+[lifecycle]
+# npx_startup_timeout_ms = 30000   # max ms to wait for npx server to start
+
+[security]
+# startup_scan = true              # scan server configs at startup
+# runtime_scan = true              # scan tool arguments before every call
+# return_scan = false              # scan tool responses (slower)
+# audit_log = ".satori/scanner.log"
+
+# Downstream server examples:
+# [[servers]]
+# name = "filesystem"
+# runtime = "npx"
+# command = "@modelcontextprotocol/server-filesystem"
+# args = ["/path/to/allowed/dir"]
+# handler = "passthrough"          # default
+# enabled = true
+
+# [[servers]]
+# name = "my-service"
+# runtime = "external"
+# host = "localhost"
+# port = 9000
+# enabled = true

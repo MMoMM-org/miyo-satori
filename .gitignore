@@ -1,4 +1,7 @@
 dist/
 node_modules/
 .satori/
+*.db
+*.db-wal
+*.db-shm
 *.js.map
