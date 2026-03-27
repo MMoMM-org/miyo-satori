@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "MCP gateway server for context management and downstream tool routing",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",

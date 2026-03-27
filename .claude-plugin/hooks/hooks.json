@@ -1,0 +1,24 @@
+{
+  "hooks": [
+    {
+      "event": "PostToolUse",
+      "command": "node dist/hooks/scripts/post-tool-use.js"
+    },
+    {
+      "event": "PreCompact",
+      "command": "node dist/hooks/scripts/pre-compact.js"
+    },
+    {
+      "event": "SessionStart",
+      "command": "node dist/hooks/scripts/session-start.js"
+    },
+    {
+      "event": "UserPromptSubmit",
+      "command": "node dist/hooks/scripts/user-prompt-submit.js"
+    },
+    {
+      "event": "PreToolUse",
+      "command": "node dist/hooks/scripts/pre-tool-use.js"
+    }
+  ]
+}
