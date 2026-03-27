@@ -16,9 +16,10 @@ export class NpxRuntime {
   async start(config: NpxStartConfig): Promise<void> {
     const { command, args = [], env = {}, startupTimeoutMs = 30000 } = config;
 
-    const mergedEnv = Object.fromEntries(
-      Object.entries({ ...process.env, ...env }).filter(([, v]) => v !== undefined),
-    ) as Record<string, string>;
+    const mergedEnv: Record<string, string> = {};
+    for (const [k, v] of Object.entries({ ...process.env, ...env })) {
+      if (v !== undefined) mergedEnv[k] = v;
+    }
 
     const proc = spawn('npx', ['-y', command, ...args], {
       env: mergedEnv,
