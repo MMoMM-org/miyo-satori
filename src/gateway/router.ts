@@ -112,13 +112,13 @@ export class GatewayRouter {
 
     // Step 10: insert capture
     const outputStr = extractOutput(afterResponse.content);
-    const captureId = this.deps.contentDb.insertCapture({
-      sessionId: sessionId ?? '',
+    const captureId = this.deps.contentDb.insertCapture(
+      sessionId ?? '',
       server,
       tool,
-      inputJson: JSON.stringify(resolvedRequest.arguments),
-      outputJson: outputStr,
-    });
+      JSON.stringify(resolvedRequest.arguments),
+      outputStr,
+    );
 
     // Step 11: update summary (non-blocking)
     const summary = summarize(server, tool, outputStr);
