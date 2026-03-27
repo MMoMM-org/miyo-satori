@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { SQLiteBase } from '../db-base.js';
@@ -27,6 +27,18 @@ describe('SQLiteBase', () => {
     const result = db['db'].pragma('journal_mode') as { journal_mode: string }[];
     expect(result[0].journal_mode).toBe('wal');
     db.cleanup();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('cleanup() removes DB file and WAL/SHM files', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'satori-test-'));
+    const dbPath = join(dir, 'test.sqlite');
+    const db = new TestDB(dbPath);
+    expect(existsSync(dbPath)).toBe(true);
+    db.cleanup();
+    expect(existsSync(dbPath)).toBe(false);
+    expect(existsSync(dbPath + '-wal')).toBe(false);
+    expect(existsSync(dbPath + '-shm')).toBe(false);
     rmSync(dir, { recursive: true, force: true });
   });
 
