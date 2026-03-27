@@ -39,6 +39,7 @@ export interface HandlerConfig {
 }
 
 export interface SatoriConfig {
+  project_dir?: string;
   gateway?: GatewayConfig;
   context?: ContextConfig;
   lifecycle?: LifecycleConfig;

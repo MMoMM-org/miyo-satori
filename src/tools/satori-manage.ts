@@ -10,7 +10,7 @@ import { AuditLog } from '../security/audit-log.js';
 import type { SatoriConfig, ServerConfig } from '../config/schema.js';
 
 const inputSchema = {
-  sub_command: z.enum(['list', 'add', 'remove', 'enable', 'disable', 'state', 'scan', 'reload']),
+  sub_command: z.enum(['list', 'add', 'remove', 'enable', 'disable', 'state', 'scan', 'reload', 'set_project_dir']),
   name: z.string().optional(),
   runtime: z.enum(['npx', 'docker', 'external']).optional(),
   command: z.string().optional(),
@@ -19,10 +19,19 @@ const inputSchema = {
   env: z.record(z.string(), z.string()).optional(),
   handler: z.string().optional(),
   scope: z.enum(['repo', 'project', 'global']).optional(),
+  dir: z.string().optional(),
 };
 
 function resolveTomlPath(scope: string | undefined, repoRoot: string): string {
   if (scope === 'global') return join(homedir(), '.satori', 'config.toml');
+  if (scope === 'project') {
+    const repoConfig = readTomlConfig(join(repoRoot, 'satori.toml'));
+    const projectDir = repoConfig.project_dir;
+    if (projectDir) {
+      const expanded = projectDir.startsWith('~/') ? join(homedir(), projectDir.slice(2)) : projectDir;
+      return join(expanded, 'satori.toml');
+    }
+  }
   return join(repoRoot, 'satori.toml');
 }
 
@@ -61,6 +70,19 @@ function serializeServerBlock(server: ServerConfig): string {
   if (server.transport !== undefined) lines.push(`transport = "${server.transport}"`);
 
   return lines.join('\n');
+}
+
+function writeProjectDirToToml(tomlPath: string, projectDir: string): void {
+  const existing = existsSync(tomlPath) ? readFileSync(tomlPath, 'utf-8') : '';
+  const lines = existing.split('\n');
+  const idx = lines.findIndex(l => l.trimStart().startsWith('project_dir'));
+  if (idx >= 0) {
+    lines[idx] = `project_dir = "${projectDir}"`;
+    writeFileSync(tomlPath, lines.join('\n'), 'utf-8');
+  } else {
+    const prefix = existing.length > 0 ? `project_dir = "${projectDir}"\n\n` : `project_dir = "${projectDir}"\n`;
+    writeFileSync(tomlPath, prefix + existing, 'utf-8');
+  }
 }
 
 function appendServerToToml(tomlPath: string, server: ServerConfig): void {
@@ -324,7 +346,24 @@ export function registerSatoriManage(
           return {
             content: [{
               type: 'text' as const,
-              text: 'Catalog reload available after Phase 5 (catalog not yet initialized)',
+              text: 'Use satori_manage(reload) after updating satori.toml to re-scan servers',
+            }],
+          };
+        }
+
+        case 'set_project_dir': {
+          if (!args.dir) {
+            return {
+              content: [{ type: 'text' as const, text: 'Error: dir is required for set_project_dir' }],
+              isError: true,
+            };
+          }
+          const tomlPath = join(repoRoot, 'satori.toml');
+          writeProjectDirToToml(tomlPath, args.dir);
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `project_dir set to "${args.dir}" in ${tomlPath}`,
             }],
           };
         }

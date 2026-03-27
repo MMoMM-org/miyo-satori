@@ -1,5 +1,11 @@
 # satori.toml — place at repo root (or ~/.satori/config.toml for global)
 # g/p/r merge: global -> project -> repo; repo-level [[servers]] wins by name
+#
+# Optional: point to a shared project directory that contains its own satori.toml.
+# Use when multiple repos belong to the same project (e.g. ~/Kouzou/projects/miyo/).
+# Set via: satori_manage(set_project_dir, {dir: "~/path/to/project"})
+#
+# project_dir = "~/Kouzou/projects/myproject"
 
 [gateway]
 # auto_register_mcp_json = false   # import .mcp.json servers at startup

@@ -4,6 +4,11 @@ import { join, resolve } from 'path';
 import { homedir } from 'os';
 import type { SatoriConfig, ServerConfig } from './schema.js';
 
+function expandPath(p: string): string {
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2));
+  return resolve(p);
+}
+
 function parseTomlFile(filePath: string): SatoriConfig {
   if (!existsSync(filePath)) {
     return {};
@@ -66,6 +71,14 @@ export function loadConfig(repoRoot: string): SatoriConfig {
 
   const globalConfig = parseTomlFile(globalPath);
   const repoConfig = parseTomlFile(repoPath);
+
+  const projectDir = repoConfig.project_dir;
+  if (projectDir) {
+    const projectPath = join(expandPath(projectDir), 'satori.toml');
+    const projectConfig = parseTomlFile(projectPath);
+    // global → project → repo (repo wins by name for servers)
+    return mergeConfigs(mergeConfigs(globalConfig, projectConfig), repoConfig);
+  }
 
   return mergeConfigs(globalConfig, repoConfig);
 }

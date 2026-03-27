@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { parse } from 'smol-toml';
@@ -210,9 +210,67 @@ enabled = true
   });
 
   describe('reload', () => {
-    it('returns placeholder message', async () => {
+    it('returns reload message', async () => {
       const result = await callTool(mcpServer, 'satori_manage', { sub_command: 'reload' });
-      expect(result.content[0].text).toContain('Phase 5');
+      expect(result.content[0].text).toContain('reload');
+    });
+  });
+
+  describe('set_project_dir', () => {
+    it('writes project_dir to satori.toml (new file)', async () => {
+      const result = await callTool(mcpServer, 'satori_manage', {
+        sub_command: 'set_project_dir',
+        dir: '/tmp/my-project',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).toContain('/tmp/my-project');
+      expect(existsSync(join(tmpDir, 'satori.toml'))).toBe(true);
+
+      const raw = readFileSync(join(tmpDir, 'satori.toml'), 'utf-8');
+      expect(raw).toContain('project_dir = "/tmp/my-project"');
+    });
+
+    it('updates existing project_dir line in satori.toml', async () => {
+      makeSatoriToml(tmpDir, 'project_dir = "/old/path"\n\n[gateway]\nauto_register_mcp_json = false\n');
+
+      await callTool(mcpServer, 'satori_manage', {
+        sub_command: 'set_project_dir',
+        dir: '/new/path',
+      });
+
+      const raw = readFileSync(join(tmpDir, 'satori.toml'), 'utf-8');
+      expect(raw).toContain('project_dir = "/new/path"');
+      expect(raw).not.toContain('/old/path');
+      expect(raw).toContain('auto_register_mcp_json');
+    });
+
+    it('returns error when dir is missing', async () => {
+      const result = await callTool(mcpServer, 'satori_manage', {
+        sub_command: 'set_project_dir',
+      });
+      expect(result.isError).toBe(true);
+    });
+
+    it('scope=project resolves to project satori.toml when project_dir is set', async () => {
+      const projectDir = join(tmpDir, 'project');
+      mkdirSync(projectDir, { recursive: true });
+      // Set project_dir in repo satori.toml
+      makeSatoriToml(tmpDir, `project_dir = "${projectDir}"\n`);
+
+      // Add a server to scope=project → should write to projectDir/satori.toml
+      const result = await callTool(mcpServer, 'satori_manage', {
+        sub_command: 'add',
+        name: 'project-server',
+        runtime: 'npx',
+        command: '@org/project-server',
+        scope: 'project',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(existsSync(join(projectDir, 'satori.toml'))).toBe(true);
+      const raw = readFileSync(join(projectDir, 'satori.toml'), 'utf-8');
+      expect(raw).toContain('project-server');
     });
   });
 });

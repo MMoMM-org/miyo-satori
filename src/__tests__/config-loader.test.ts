@@ -86,6 +86,79 @@ command = "@server/a-repo"
     }
   });
 
+  it('loads project-level config when project_dir is set in repo config', () => {
+    const projectDir = join(tmpDir, 'project');
+    mkdirSync(projectDir, { recursive: true });
+
+    writeFileSync(join(projectDir, 'satori.toml'), `
+[context]
+retain_days = 14
+
+[[servers]]
+name = "shared"
+runtime = "npx"
+command = "@org/shared-server"
+`, 'utf-8');
+
+    writeTOML(tmpDir, 'satori.toml', `
+project_dir = "${projectDir}"
+
+[context]
+retain_days = 30
+
+[[servers]]
+name = "local"
+runtime = "npx"
+command = "@org/local-server"
+`);
+
+    const config = loadConfig(tmpDir);
+    // repo retain_days wins over project
+    expect(config.context?.retain_days).toBe(30);
+    // servers from both levels present
+    expect(config.servers).toHaveLength(2);
+    expect(config.servers!.find(s => s.name === 'shared')).toBeDefined();
+    expect(config.servers!.find(s => s.name === 'local')).toBeDefined();
+  });
+
+  it('project-level server is overridden by repo-level server with same name', () => {
+    const projectDir = join(tmpDir, 'project');
+    mkdirSync(projectDir, { recursive: true });
+
+    writeFileSync(join(projectDir, 'satori.toml'), `
+[[servers]]
+name = "shared"
+runtime = "npx"
+command = "@org/shared-project"
+`, 'utf-8');
+
+    writeTOML(tmpDir, 'satori.toml', `
+project_dir = "${projectDir}"
+
+[[servers]]
+name = "shared"
+runtime = "npx"
+command = "@org/shared-repo"
+`);
+
+    const config = loadConfig(tmpDir);
+    expect(config.servers).toHaveLength(1);
+    expect(config.servers![0].command).toBe('@org/shared-repo');
+  });
+
+  it('skips project-level load when project_dir not set', () => {
+    writeTOML(tmpDir, 'satori.toml', `
+[[servers]]
+name = "only-repo"
+runtime = "npx"
+command = "@org/repo-server"
+`);
+
+    const config = loadConfig(tmpDir);
+    expect(config.servers).toHaveLength(1);
+    expect(config.servers![0].name).toBe('only-repo');
+  });
+
   it('parses all TOML scalar types correctly', () => {
     writeTOML(tmpDir, 'satori.toml', `
 [gateway]
