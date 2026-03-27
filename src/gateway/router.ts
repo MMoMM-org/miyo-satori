@@ -126,6 +126,6 @@ export class GatewayRouter {
       this.deps.contentDb.updateSummary(captureId, summary);
     });
 
-    return { content: outputStr };
+    return { content: summary };
   }
 }
