@@ -1,8 +1,10 @@
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { ServerState, ServerStateEntry, RuntimeInterface } from './state.js';
 
 export class LifecycleManager {
   private states = new Map<string, ServerStateEntry>();
   private runtimes = new Map<string, RuntimeInterface>();
+  private clients = new Map<string, Client>();
 
   getState(name: string): ServerState {
     return this.states.get(name)?.state ?? 'stopped';
@@ -36,6 +38,14 @@ export class LifecycleManager {
     this.states.set(name, { state: 'blocked', lastError: reason });
   }
 
+  setClient(name: string, client: Client): void {
+    this.clients.set(name, client);
+  }
+
+  getClient(name: string): Client | null {
+    return this.clients.get(name) ?? null;
+  }
+
   async start(
     name: string,
     runtimeType: string,
@@ -61,6 +71,11 @@ export class LifecycleManager {
     try {
       await runtime.start(config);
       this.setRunning(name);
+      const runtimeWithClient = runtime as { getClient?: () => Client | null };
+      if (typeof runtimeWithClient.getClient === 'function') {
+        const client = runtimeWithClient.getClient();
+        if (client) this.setClient(name, client);
+      }
       return { success: true };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
