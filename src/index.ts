@@ -19,6 +19,10 @@ import { registerSatoriManage } from './tools/satori-manage.js';
 import { registerSatoriFind } from './tools/satori-find.js';
 import { registerSatoriSchema } from './tools/satori-schema.js';
 import { registerSatoriExec } from './tools/satori-exec.js';
+import { registerSatoriKb } from './tools/satori-kb.js';
+import { KnowledgeDB } from './knowledge/knowledge-db.js';
+import { PolyglotExecutor } from './execution/executor.js';
+import { BuiltinServer } from './execution/builtin-server.js';
 
 const server = new McpServer({ name: 'satori', version: '0.1.0' });
 
@@ -43,9 +47,22 @@ async function main() {
       : join(repoRoot, '.satori', 'scanner.log'),
   );
 
-  // Registry + lifecycle
+  // Knowledge + execution
+  const knowledgeDb = new KnowledgeDB(KnowledgeDB.kbPath(repoRoot));
+  const executor = new PolyglotExecutor();
+  const builtinServer = new BuiltinServer(executor, knowledgeDb);
+
+  // Kairn backend warning
+  if (config.context?.backend === 'kairn') {
+    process.stderr.write('[satori] warning: context.backend="kairn" is not yet supported — falling back to satori\n');
+  }
+
+  // Registry + lifecycle — prepend builtin "bash" server so it's always available
   const registry = new ServerRegistry();
-  registry.load(config);
+  registry.load({
+    ...config,
+    servers: [{ name: 'bash', runtime: 'builtin', enabled: true }, ...(config.servers ?? [])],
+  });
 
   const lifecycle = new LifecycleManager();
   lifecycle.registerRuntime('npx', new NpxRuntime());
@@ -72,15 +89,17 @@ async function main() {
     scanner,
     auditLog,
     contentDb,
+    builtinServer,
     getClient: (name) => lifecycle.getClient(name),
   });
 
-  // Register all 5 tools
+  // Register all 6 tools
   registerSatoriContext(server, sessionDb, contentDb);
   registerSatoriManage(server, registry, repoRoot);
   registerSatoriFind(server, catalog, lifecycle);
   registerSatoriSchema(server, catalog);
   registerSatoriExec(server, router);
+  registerSatoriKb(server, knowledgeDb);
 
   // Connect
   const transport = new StdioServerTransport();

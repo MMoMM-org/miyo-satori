@@ -5,6 +5,7 @@ import type { HandlerRegistry } from '../handlers/registry.js';
 import type { SecurityScanner } from '../security/scanner.js';
 import type { AuditLog } from '../security/audit-log.js';
 import type { ContentDB } from '../context/content-db.js';
+import type { BuiltinServer } from '../execution/builtin-server.js';
 import { summarize } from '../context/summarizer.js';
 
 export interface RouterDeps {
@@ -14,6 +15,7 @@ export interface RouterDeps {
   scanner: SecurityScanner;
   auditLog: AuditLog;
   contentDb: ContentDB;
+  builtinServer: BuiltinServer;
   getClient: (serverName: string) => Client | null;
 }
 
@@ -47,6 +49,28 @@ export class GatewayRouter {
     const config = this.deps.registry.lookup(server);
     if (!config) {
       return errorResult(`Server "${server}" not found in registry`);
+    }
+
+    // Step 2.5: Builtin server dispatch (bypasses LifecycleManager entirely)
+    if (config.runtime === 'builtin') {
+      const argsBlocked = this.deps.scanner.scanArgs(server, tool, args);
+      if (argsBlocked) {
+        return errorResult(`Call blocked by scanner: ${argsBlocked.reason}`);
+      }
+      const builtinResult = await this.deps.builtinServer.exec(server, tool, args);
+      const outputStr = extractOutput(builtinResult.content);
+      const captureId = this.deps.contentDb.insertCapture(
+        sessionId ?? '',
+        server,
+        tool,
+        JSON.stringify(args),
+        outputStr,
+      );
+      const summary = summarize(server, tool, outputStr);
+      void Promise.resolve().then(() => {
+        this.deps.contentDb.updateSummary(captureId, summary);
+      });
+      return { content: summary, ...(builtinResult.isError ? { isError: true as const } : {}) };
     }
 
     // Step 3: check state, start if stopped

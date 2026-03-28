@@ -93,7 +93,31 @@ export class SecurityScanner {
     return result;
   }
 
+  scanArgs(
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ): BlockedResult | null {
+    const result = scanObject(args);
+    if (result) {
+      this.auditLog.append({
+        event: 'IN_SCAN',
+        server: serverName,
+        tool: toolName,
+        status: 'blocked',
+        reason: result.reason,
+        via: 'satori_exec',
+      });
+    }
+    return result;
+  }
+
   scanConfig(server: ServerConfig): ScanResult {
+    // Builtin servers have no command/image field — shell injection check is not applicable
+    if (server.runtime === 'builtin') {
+      return { status: 'passed' };
+    }
+
     const candidates: string[] = [];
     if (server.command) candidates.push(server.command);
     if (server.image) candidates.push(server.image);
