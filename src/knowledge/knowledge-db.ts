@@ -157,7 +157,7 @@ export class KnowledgeDB extends SQLiteBase {
     limit?: number;
     sessionId?: string;
   }): KbSearchResult[] | ThrottleBlock {
-    const { query, contentType, limit = 10, sessionId = 'default' } = opts;
+    const { query, contentType, limit = 5, sessionId = 'default' } = opts;
 
     // --- Throttle ---
     const entry = this.throttleMap.get(sessionId) ?? { count: 0 };

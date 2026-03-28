@@ -109,6 +109,7 @@ async function main() {
     await server.close();
     sessionDb.close();
     contentDb.close();
+    knowledgeDb.close();
     process.exit(0);
   });
 
@@ -116,6 +117,7 @@ async function main() {
     await server.close();
     sessionDb.close();
     contentDb.close();
+    knowledgeDb.close();
     process.exit(0);
   });
 }
