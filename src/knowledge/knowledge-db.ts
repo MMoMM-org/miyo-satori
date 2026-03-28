@@ -270,9 +270,29 @@ export class KnowledgeDB extends SQLiteBase {
   }): Promise<{ indexed: number } | { error: string }> {
     const { url, title } = opts;
 
+    // Follow redirects manually, capped at 5 (spec: max 5 redirects)
+    const MAX_REDIRECTS = 5;
     let response: Response;
+    let currentUrl = url;
+    let redirectCount = 0;
     try {
-      response = await globalThis.fetch(url, { redirect: 'follow' });
+      while (true) {
+        response = await globalThis.fetch(currentUrl, { redirect: 'manual' });
+        if (
+          (response.status === 301 || response.status === 302 ||
+           response.status === 303 || response.status === 307 ||
+           response.status === 308) &&
+          response.headers.get('location')
+        ) {
+          if (redirectCount >= MAX_REDIRECTS) {
+            return { error: `Too many redirects (max ${MAX_REDIRECTS})` };
+          }
+          currentUrl = new URL(response.headers.get('location')!, currentUrl).href;
+          redirectCount++;
+          continue;
+        }
+        break;
+      }
     } catch (err) {
       return { error: `Fetch failed: ${String(err)}` };
     }
