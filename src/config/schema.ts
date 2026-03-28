@@ -6,6 +6,7 @@ export interface ContextConfig {
   db_path?: string;
   session_guide_max_bytes?: number;
   retain_days?: number;
+  backend?: 'satori' | 'kairn';
 }
 
 export interface LifecycleConfig {
@@ -21,7 +22,7 @@ export interface SecurityConfig {
 
 export interface ServerConfig {
   name: string;
-  runtime: 'npx' | 'docker' | 'external';
+  runtime: 'npx' | 'docker' | 'external' | 'builtin';
   command?: string;
   image?: string;
   args?: string[];

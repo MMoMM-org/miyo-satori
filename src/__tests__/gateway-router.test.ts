@@ -9,6 +9,7 @@ import type { AuditLog } from '../security/audit-log.js';
 import type { ContentDB } from '../context/content-db.js';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { ServerConfig } from '../config/schema.js';
+import type { BuiltinServer } from '../execution/builtin-server.js';
 
 function makeServerConfig(overrides?: Partial<ServerConfig>): ServerConfig {
   return {
@@ -48,7 +49,12 @@ function makeDeps(overrides?: Partial<RouterDeps>): RouterDeps {
 
   const mockScanner = {
     scanOut: vi.fn().mockReturnValue(null),
+    scanArgs: vi.fn().mockReturnValue(null),
   } as unknown as SecurityScanner;
+
+  const mockBuiltinServer = {
+    exec: vi.fn().mockResolvedValue({ content: 'builtin output' }),
+  } as unknown as BuiltinServer;
 
   const mockAuditLog = {
     append: vi.fn(),
@@ -66,9 +72,10 @@ function makeDeps(overrides?: Partial<RouterDeps>): RouterDeps {
     scanner: mockScanner,
     auditLog: mockAuditLog,
     contentDb: mockContentDb,
+    builtinServer: mockBuiltinServer,
     getClient: vi.fn().mockReturnValue(mockClient),
     ...overrides,
-  };
+  } as RouterDeps;
 }
 
 describe('GatewayRouter', () => {
@@ -178,6 +185,45 @@ describe('GatewayRouter', () => {
       expect(result.isError).toBe(true);
       const parsed = JSON.parse(result.content);
       expect(parsed.error).toContain('not connected');
+    });
+  });
+
+  describe('builtin server routing', () => {
+    it('routes to builtinServer bypassing lifecycle', async () => {
+      const deps = makeDeps({
+        registry: {
+          lookup: vi.fn().mockReturnValue(makeServerConfig({ runtime: 'builtin' })),
+          list: vi.fn().mockReturnValue([]),
+        } as unknown as ServerRegistry,
+      });
+      const router = new GatewayRouter(deps);
+
+      const result = await router.exec('bash', 'run', { language: 'shell', code: 'echo 1' }, 'sess-1');
+
+      expect(result.isError).toBeFalsy();
+      expect(deps.builtinServer.exec).toHaveBeenCalledWith('bash', 'run', { language: 'shell', code: 'echo 1' });
+      expect(deps.lifecycle.getState).not.toHaveBeenCalled();
+      expect(deps.getClient).not.toHaveBeenCalled();
+      expect(deps.contentDb.insertCapture).toHaveBeenCalled();
+    });
+
+    it('calls scanArgs before dispatch and blocks on secret', async () => {
+      const deps = makeDeps({
+        registry: {
+          lookup: vi.fn().mockReturnValue(makeServerConfig({ runtime: 'builtin' })),
+          list: vi.fn().mockReturnValue([]),
+        } as unknown as ServerRegistry,
+        scanner: {
+          scanArgs: vi.fn().mockReturnValue({ blocked: true, reason: 'secret detected' }),
+          scanOut: vi.fn().mockReturnValue(null),
+        } as unknown as SecurityScanner,
+      });
+      const router = new GatewayRouter(deps);
+
+      const result = await router.exec('bash', 'run', { code: 'TOKEN=secret' });
+
+      expect(result.isError).toBe(true);
+      expect(deps.builtinServer.exec).not.toHaveBeenCalled();
     });
   });
 

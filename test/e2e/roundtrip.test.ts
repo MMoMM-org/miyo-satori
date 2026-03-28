@@ -11,6 +11,9 @@ import { HandlerRegistry } from '../../src/handlers/registry.js';
 import { SecurityScanner } from '../../src/security/scanner.js';
 import { AuditLog } from '../../src/security/audit-log.js';
 import { GatewayRouter } from '../../src/gateway/router.js';
+import { BuiltinServer } from '../../src/execution/builtin-server.js';
+import { PolyglotExecutor } from '../../src/execution/executor.js';
+import { KnowledgeDB } from '../../src/knowledge/knowledge-db.js';
 import { buildResumeSnapshot } from '../../src/context/snapshot.js';
 
 const RUN_E2E = !!process.env.RUN_E2E;
@@ -47,6 +50,9 @@ describe.skipIf(!RUN_E2E)('E2E: full satori_exec roundtrip', () => {
     const handlerRegistry = new HandlerRegistry();
     const auditLog = new AuditLog(join(tmpDir, 'scanner.log'));
     const scanner = new SecurityScanner(auditLog);
+    const executor = new PolyglotExecutor();
+    const knowledgeDb = new KnowledgeDB(join(tmpDir, 'kb.sqlite'));
+    const builtinServer = new BuiltinServer(executor, knowledgeDb);
 
     router = new GatewayRouter({
       registry,
@@ -55,6 +61,7 @@ describe.skipIf(!RUN_E2E)('E2E: full satori_exec roundtrip', () => {
       scanner,
       auditLog,
       contentDb,
+      builtinServer,
       getClient: (name) => lifecycle.getClient(name),
     });
   }, 60000);

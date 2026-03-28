@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 
 export interface AuditEntry {
-  event: 'STARTUP' | 'BLOCKED' | 'OUT_SCAN' | 'WARN';
+  event: 'STARTUP' | 'BLOCKED' | 'OUT_SCAN' | 'IN_SCAN' | 'WARN';
   server?: string;
   tool?: string;
   status?: string;
