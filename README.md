@@ -40,6 +40,17 @@ Satori merges configuration from three levels (global → project → repo). Cre
 | `satori_find` | Search the tool catalog across all registered servers by keyword |
 | `satori_schema` | Get the full input schema for a specific tool on a specific server |
 | `satori_exec` | Route a tool call to a downstream server; starts the server if not running |
+| `satori_kb` | Knowledge base search (index/search/fetch_and_index) |
+
+> **Note:** `bash` is a built-in code execution tool (not listed as a separate MCP tool — use directly as `satori_exec("bash", ...)`)
+
+## Documentation
+
+- [`docs/getting-started.md`](docs/getting-started.md) — Setup and first tool call
+- [`docs/concepts.md`](docs/concepts.md) — Architecture: gateway, context DB, knowledge base
+- [`docs/configuration.md`](docs/configuration.md) — All satori.toml fields and server configuration
+- [`docs/tools.md`](docs/tools.md) — Complete tool API reference
+- [`docs/hooks.md`](docs/hooks.md) — Claude Code hooks setup for passive context capture
 
 ## Hooks setup
 
