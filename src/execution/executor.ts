@@ -125,7 +125,7 @@ export class PolyglotExecutor {
       // and other project-aware tools work naturally. Non-shell languages
       // run in the temp directory where their script file is written.
       const cwd = language === 'shell' ? this.#projectRoot : tmpDir;
-      const result = await this.#spawn(cmd, cwd, timeout, background, env);
+      const result = await this.#spawn(cmd, cwd, timeout, background, env, tmpDir);
 
       // Skip tmpDir cleanup if process was backgrounded — it may still need files
       if (!result.backgrounded) {
@@ -144,12 +144,78 @@ export class PolyglotExecutor {
   }
 
   async executeFile(opts: ExecuteFileOpts): Promise<ExecuteResult> {
-    const { path: filePath, language, code, timeout = 30_000 } = opts;
+    const { path: filePath, language, timeout = 30_000 } = opts;
     const absolutePath = resolve(this.#projectRoot, filePath);
     const fileContent = readFileSync(absolutePath, 'utf-8');
-    // If code is provided, prepend it as variable assignments to the file content
-    const combined = code ? `${code}\n${fileContent}` : fileContent;
+    const wrapped = this.#wrapWithFileContent(language, absolutePath, opts.code ?? '');
+    const combined = `${wrapped}\n${fileContent}`;
     return this.execute({ language, code: combined, timeout });
+  }
+
+  /** Prepend language-specific FILE_CONTENT / FILE_CONTENT_PATH bindings to user code. */
+  #wrapWithFileContent(language: Language, filePath: string, code: string): string {
+    const p = JSON.stringify(filePath); // JS-safe quoted string, e.g. "/path/to/file"
+    const plain = filePath.replace(/'/g, "'\\''"); // POSIX single-quote escape
+    switch (language) {
+      case 'javascript':
+      case 'typescript':
+        return [
+          `const { readFileSync: __rfs } = require('fs');`,
+          `const FILE_CONTENT_PATH = ${p};`,
+          `const FILE_CONTENT = __rfs(FILE_CONTENT_PATH, 'utf8');`,
+          code,
+        ].join('\n');
+      case 'python':
+        return [
+          `FILE_CONTENT_PATH = ${p}`,
+          `with open(FILE_CONTENT_PATH, encoding='utf-8') as __f:`,
+          `    FILE_CONTENT = __f.read()`,
+          code,
+        ].join('\n');
+      case 'shell':
+        return [
+          `FILE_CONTENT_PATH='${plain}'`,
+          `FILE_CONTENT=$(cat "$FILE_CONTENT_PATH")`,
+          code,
+        ].join('\n');
+      case 'ruby':
+        return [
+          `FILE_CONTENT_PATH = ${p}`,
+          `FILE_CONTENT = File.read(FILE_CONTENT_PATH)`,
+          code,
+        ].join('\n');
+      case 'php':
+        return [
+          `$FILE_CONTENT_PATH = ${p};`,
+          `$FILE_CONTENT = file_get_contents($FILE_CONTENT_PATH);`,
+          code,
+        ].join('\n');
+      case 'perl':
+        return [
+          `my $FILE_CONTENT_PATH = ${p};`,
+          `open(my $fh, '<', $FILE_CONTENT_PATH) or die $!;`,
+          `my $FILE_CONTENT = do { local $/; <$fh> };`,
+          `close $fh;`,
+          code,
+        ].join('\n');
+      case 'r':
+        return [
+          `FILE_CONTENT_PATH <- ${p}`,
+          `FILE_CONTENT <- readLines(FILE_CONTENT_PATH, warn = FALSE)`,
+          `FILE_CONTENT <- paste(FILE_CONTENT, collapse = '\\n')`,
+          code,
+        ].join('\n');
+      case 'elixir':
+        return [
+          `file_content_path = ${p}`,
+          `file_content = File.read!(file_content_path)`,
+          code,
+        ].join('\n');
+      case 'go':
+      case 'rust':
+        // These languages don't support preamble injection
+        return code;
+    }
   }
 
   // ─────────────────────────────────────────────────────────
@@ -225,7 +291,7 @@ export class PolyglotExecutor {
     }
 
     // Run
-    return this.#spawn([binPath], cwd, timeout);
+    return this.#spawn([binPath], cwd, timeout, false, undefined, cwd);
   }
 
   async #spawn(
@@ -234,6 +300,7 @@ export class PolyglotExecutor {
     timeout: number,
     background = false,
     extraEnv?: Record<string, string>,
+    tmpDir?: string,
   ): Promise<ExecuteResult> {
     return new Promise((res) => {
       // Only .cmd/.bat shims need shell on Windows; real executables don't.
@@ -253,7 +320,7 @@ export class PolyglotExecutor {
       const proc = spawn(spawnCmd, spawnArgs, {
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: this.#buildSafeEnv(extraEnv),
+        env: this.#buildSafeEnv(extraEnv, tmpDir),
         shell: needsShell,
         // On Unix, create a new process group so killTree can kill all children
         detached: !isWin,
@@ -391,7 +458,7 @@ export class PolyglotExecutor {
    * DENIED list matches context-mode exactly; additional entries added for
    * Elixir/Erlang, Go, Rust, PHP, R, and git-based injection vectors.
    */
-  #buildSafeEnv(extra?: Record<string, string>): NodeJS.ProcessEnv {
+  #buildSafeEnv(extra?: Record<string, string>, tmpDir?: string): NodeJS.ProcessEnv {
     // Denylist: env vars that corrupt sandbox stdout, inject code, or break
     // language runtimes. Each entry is backed by CVE, MITRE, or live testing.
     // See: https://www.elttam.com/blog/env/, MITRE T1574.006
@@ -484,6 +551,10 @@ export class PolyglotExecutor {
     }
 
     // Sandbox overrides — forced values for correct sandbox behavior
+    if (tmpDir) {
+      env['TMPDIR'] = tmpDir;
+      env['HOME'] = process.env.HOME ?? tmpDir;
+    }
     env['LANG'] = 'en_US.UTF-8';
     env['PYTHONDONTWRITEBYTECODE'] = '1';
     env['PYTHONUNBUFFERED'] = '1';

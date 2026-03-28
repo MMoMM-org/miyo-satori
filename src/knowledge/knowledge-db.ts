@@ -217,7 +217,7 @@ export class KnowledgeDB extends SQLiteBase {
     // If no results and query has words, try simple fuzzy correction
     let combinedResults: RawFtsRow[];
     if (porterResults.length === 0 && trigramResults.length === 0) {
-      const corrected = tryFuzzyCorrect(query);
+      const corrected = this.tryFuzzyCorrect(query);
       if (corrected && corrected !== safeQuery) {
         const safeCorrection = sanitizeFtsQuery(corrected);
         if (safeCorrection) {
@@ -241,12 +241,12 @@ export class KnowledgeDB extends SQLiteBase {
 
     // Build search results with snippets
     const seen = new Set<number>();
-    const output: KbSearchResult[] = [];
+    const rawOutput: KbSearchResult[] = [];
 
     for (const row of combinedResults) {
       if (seen.has(row.id)) continue;
       seen.add(row.id);
-      output.push({
+      rawOutput.push({
         chunk_id: row.id,
         title: row.title,
         heading: row.heading,
@@ -254,10 +254,13 @@ export class KnowledgeDB extends SQLiteBase {
         type: row.type as 'prose' | 'code',
         score: row.score,
       });
-      if (output.length >= effectiveLimit) break;
     }
 
-    return output;
+    // Apply proximity reranking then slice to limit
+    const queryWords = query.trim().split(/\s+/).filter((w) => w.length > 1);
+    const reranked = this.applyProximityReranking(rawOutput, queryWords);
+
+    return reranked.slice(0, effectiveLimit);
   }
 
   // ---------------------------------------------------------------------------
@@ -342,6 +345,93 @@ export class KnowledgeDB extends SQLiteBase {
       LIMIT ?
     `;
     return this.db.prepare(sql).all(ftsQuery, limit) as RawFtsRow[];
+  }
+
+  /** Tries 1-char deletion candidates against the FTS5 index; returns corrected query or original */
+  private tryFuzzyCorrect(query: string): string {
+    const words = query.trim().split(/\s+/);
+    const corrected = words.map((word) => this.fuzzyWord(word));
+    return corrected.join(' ');
+  }
+
+  private fuzzyWord(word: string): string {
+    // Only attempt correction for words 4+ chars that look like real words
+    if (word.length < 4 || !/^[a-zA-Z]+$/.test(word)) return word;
+
+    // Try 1-char deletions (most common typo: extra or wrong char)
+    for (let i = 0; i < word.length; i++) {
+      const candidate = word.slice(0, i) + word.slice(i + 1);
+      if (this.termExistsInIndex(candidate)) return candidate;
+    }
+    // Try adjacent transpositions (swapped chars)
+    for (let i = 0; i < word.length - 1; i++) {
+      const candidate = word.slice(0, i) + word[i + 1] + word[i] + word.slice(i + 2);
+      if (this.termExistsInIndex(candidate)) return candidate;
+    }
+    return word;
+  }
+
+  private termExistsInIndex(term: string): boolean {
+    try {
+      const row = this.db.prepare(
+        `SELECT COUNT(*) as cnt FROM chunks_fts WHERE chunks_fts MATCH ?`
+      ).get(`${term}*`) as { cnt: number } | undefined;
+      return (row?.cnt ?? 0) > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private applyProximityReranking(
+    results: KbSearchResult[],
+    queryWords: string[],
+  ): KbSearchResult[] {
+    if (queryWords.length < 2) return results; // single-word: no proximity to measure
+
+    return results
+      .map((r) => {
+        const text = (r.heading + ' ' + r.snippet).toLowerCase();
+        const words = text.split(/\s+/);
+        const positions = new Map<string, number[]>();
+
+        queryWords.forEach((qw) => {
+          const qwLower = qw.toLowerCase();
+          words.forEach((w, i) => {
+            if (w.startsWith(qwLower)) {
+              const arr = positions.get(qw) ?? [];
+              arr.push(i);
+              positions.set(qw, arr);
+            }
+          });
+        });
+
+        // Minimum span covering all query terms (sweep-line)
+        const allTermsCovered = queryWords.every((qw) => (positions.get(qw)?.length ?? 0) > 0);
+        if (!allTermsCovered) return { ...r }; // no boost if not all terms present
+
+        // Find minimum window
+        const pointers = queryWords.map(() => 0);
+        let minSpan = Infinity;
+        let done = false;
+
+        while (!done) {
+          const currentPositions = queryWords.map((qw, i) => positions.get(qw)![pointers[i]]);
+          const windowMin = Math.min(...currentPositions);
+          const windowMax = Math.max(...currentPositions);
+          minSpan = Math.min(minSpan, windowMax - windowMin);
+
+          // Advance the pointer for the term with the smallest position
+          const minIdx = currentPositions.indexOf(windowMin);
+          pointers[minIdx]++;
+          if (pointers[minIdx] >= (positions.get(queryWords[minIdx])?.length ?? 0)) {
+            done = true;
+          }
+        }
+
+        const boost = 1 / (1 + minSpan / Math.max(words.length, 1));
+        return { ...r, score: r.score * (1 + boost) };
+      })
+      .sort((a, b) => b.score - a.score);
   }
 
   // ---------------------------------------------------------------------------
@@ -460,50 +550,6 @@ function rrfMerge(
   });
 }
 
-// =============================================================================
-// Simple fuzzy correction
-// =============================================================================
-
-/**
- * Very lightweight Levenshtein-inspired corrections.
- * Tries single-char deletion and adjacent-char swaps on each query word.
- * Returns a corrected query string, or null if no change.
- */
-function tryFuzzyCorrect(query: string): string | null {
-  const words = query.trim().split(/\s+/);
-  const corrected = words.map(w => fuzzyWord(w));
-  const result = corrected.join(' ');
-  return result !== query ? result : null;
-}
-
-function fuzzyWord(word: string): string {
-  if (word.length <= 2) return word;
-
-  // Try deletions (1-char)
-  const deletions: string[] = [];
-  for (let i = 0; i < word.length; i++) {
-    deletions.push(word.slice(0, i) + word.slice(i + 1));
-  }
-
-  // Try adjacent swaps
-  const swaps: string[] = [];
-  for (let i = 0; i < word.length - 1; i++) {
-    const chars = word.split('');
-    [chars[i], chars[i + 1]] = [chars[i + 1], chars[i]];
-    swaps.push(chars.join(''));
-  }
-
-  // Return first candidate that looks plausible (shortest deletion as fallback)
-  // In practice, without a dictionary we just return the original — the real
-  // correction happens when callers pass this to a new FTS query attempt.
-  // We pick the most common case: drop trailing punctuation/noise char.
-  const lastChar = word[word.length - 1];
-  if (/[^a-z0-9]/i.test(lastChar)) {
-    return word.slice(0, -1);
-  }
-
-  return word;
-}
 
 // =============================================================================
 // Snippet extraction
