@@ -1,3 +1,5 @@
+import { existsSync } from 'fs';
+import { join } from 'path';
 import { SessionDB } from '../../src/context/session-db.js';
 import { ContentDB } from '../../src/context/content-db.js';
 import { extractEvent } from '../../src/context/extract.js';
@@ -9,6 +11,12 @@ async function main(): Promise<void> {
   const payload = readStdinPayload();
   const sessionId = extractSessionId(payload);
   const repoRoot = getRepoRoot();
+
+  // Guard: exit 0 silently if .satori/ does not exist (Satori not installed)
+  if (!existsSync(join(repoRoot, '.satori'))) {
+    process.exit(0);
+  }
+
   const dbPath = SessionDB.defaultDBPath(repoRoot);
 
   let sessionDb: SessionDB | null = null;
