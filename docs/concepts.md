@@ -35,7 +35,7 @@ The gateway layer handles everything directly visible to Claude Code:
 
 - **Tool routing** — `satori_exec` dispatches a call to the correct downstream server, starting it on first use if needed.
 - **Tool discovery** — `satori_find` searches the tool catalog across all registered servers; `satori_schema` returns the full input schema for any tool.
-- **Server management** — `satori_manage` lets you list, register, enable, disable, and scan servers at runtime without restarting satori.
+- **Server inspection** — `satori_manage` lets you list registered servers, inspect their state, and run security scans. It is read-only; configuration changes happen by editing `satori.toml`.
 - **Bash builtin** — a fully-implemented code execution server (`BuiltinServer`) that handles `run`, `run_file`, and `batch`. It bypasses `LifecycleManager` entirely and is always available without any `satori.toml` entry. Accessed via `satori_exec("bash", "run", { ... })`.
 
 ### Context layer — session capture

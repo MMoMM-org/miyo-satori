@@ -216,9 +216,10 @@ automatically:
 
 - Add your downstream servers to `satori.toml` at the repo root (or globally at
   `~/.satori/config.toml`). The TCS install does not add any downstream servers.
-- If multiple repos share a project, set a shared project directory:
-  `satori_manage(set_project_dir, {dir: "/absolute/path/to/project"})`.
-  See [configuration.md](configuration.md) for the three-layer merge model.
+- If multiple repos share a project, set a shared project directory by adding
+  `project_dir = "/absolute/path/to/project"` to the top of the repo-level
+  `satori.toml`. See [configuration.md](configuration.md) for the three-layer
+  merge model.
 
 ---
 

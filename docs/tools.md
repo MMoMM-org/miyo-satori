@@ -110,35 +110,19 @@ snapshot size in bytes.
 
 ## `satori_manage`
 
-**Purpose:** Manage downstream MCP servers registered with the gateway —
-add, remove, enable/disable, inspect state, run security scans, reload
-configuration, and set the project directory.
+**Purpose:** Inspect downstream MCP servers registered with the gateway.
+This tool is **read-only** — it does not modify configuration. To add,
+remove, enable, or disable servers, edit `satori.toml` directly and restart
+the gateway.
 
-**Tool description (from source):** `Manage downstream MCP servers: list, add, remove, enable, disable, state, scan, reload`
+**Tool description (from source):** `Inspect downstream MCP servers (read-only): list, state, scan. Edit satori.toml directly to add, remove, enable, or disable servers.`
 
 ### Parameters
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `sub_command` | `'list' \| 'add' \| 'remove' \| 'enable' \| 'disable' \| 'state' \| 'scan' \| 'reload' \| 'set_project_dir'` | Yes | Operation to perform |
-| `name` | `string` | No | Server name (required for most sub-commands) |
-| `runtime` | `'npx' \| 'docker' \| 'external'` | No | Server runtime type (required for `add`) |
-| `command` | `string` | No | Executable command (used by `add`) |
-| `image` | `string` | No | Docker image name (used by `add` with `docker` runtime) |
-| `args` | `string[]` | No | Additional arguments passed to the server process |
-| `env` | `Record<string, string>` | No | Environment variables to inject |
-| `handler` | `string` | No | Handler override (defaults to `"passthrough"`) |
-| `scope` | `'repo' \| 'project' \| 'global'` | No | Config file scope — controls which `satori.toml` is written to |
-| `dir` | `string` | No | Directory path (required for `set_project_dir`) |
-
-#### The `scope` field
-
-`scope` controls which `satori.toml` file is read and written:
-
-- `repo` (default): `<repo-root>/satori.toml`
-- `project`: the path stored in `project_dir` within the repo-level TOML,
-  expanded to `<project_dir>/satori.toml`
-- `global`: `~/.satori/config.toml`
+| `sub_command` | `'list' \| 'state' \| 'scan'` | Yes | Operation to perform |
+| `name` | `string` | No | Server name (required for `state`; optional for `scan`) |
 
 ---
 
@@ -168,73 +152,10 @@ handler.
 
 ---
 
-### `add`
-
-Registers a new server by appending a `[[servers]]` block to the target
-`satori.toml`. Requires `name` and `runtime`. Reloads the registry after
-writing.
-
-```json
-{
-  "sub_command": "add",
-  "name": "my-server",
-  "runtime": "npx",
-  "command": "my-mcp-server",
-  "args": ["--port", "3000"],
-  "env": { "API_KEY": "secret" },
-  "scope": "repo"
-}
-```
-
----
-
-### `remove`
-
-Removes the `[[servers]]` block for the named server from the target
-`satori.toml` and reloads the registry.
-
-```json
-{
-  "sub_command": "remove",
-  "name": "my-server",
-  "scope": "repo"
-}
-```
-
----
-
-### `enable`
-
-Sets `enabled = true` on the server's block in the target TOML and updates
-the live registry.
-
-```json
-{
-  "sub_command": "enable",
-  "name": "my-server",
-  "scope": "repo"
-}
-```
-
----
-
-### `disable`
-
-Sets `enabled = false` on the server's block in the target TOML and updates
-the live registry.
-
-```json
-{
-  "sub_command": "disable",
-  "name": "my-server"
-}
-```
-
----
-
 ### `state`
 
 Returns the current configuration and lifecycle state for a single server.
+Requires `name`.
 
 ```json
 {
@@ -272,34 +193,6 @@ registered servers. Results include the server name plus scanner output.
 ```json
 {
   "sub_command": "scan"
-}
-```
-
----
-
-### `reload`
-
-Signals that the gateway should re-read `satori.toml`. Run this after
-manually editing the config file outside the gateway.
-
-```json
-{
-  "sub_command": "reload"
-}
-```
-
----
-
-### `set_project_dir`
-
-Writes or updates the `project_dir` key in the repo-level `satori.toml`.
-This value is used when `scope = "project"` to locate the project-scoped
-TOML. Requires `dir`.
-
-```json
-{
-  "sub_command": "set_project_dir",
-  "dir": "~/projects/my-app"
 }
 ```
 
