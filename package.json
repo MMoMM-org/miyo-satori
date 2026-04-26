@@ -1,6 +1,6 @@
 {
   "name": "miyo-satori",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP gateway server for context management and downstream tool routing",
   "type": "module",
   "main": "dist/src/index.js",
