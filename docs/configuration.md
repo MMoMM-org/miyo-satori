@@ -18,7 +18,7 @@ This means global defaults apply everywhere, project config extends them across 
 
 ---
 
-## `project_dir` and `set_project_dir`
+## `project_dir`
 
 | Field | Type | Default |
 |---|---|---|
@@ -26,13 +26,13 @@ This means global defaults apply everywhere, project config extends them across 
 
 `project_dir` points to a shared project directory that contains its own `satori.toml`. It is intended for situations where multiple repos belong to the same logical project (for example, several repos under `~/Kouzou/projects/miyo/`). When set, that directory's `satori.toml` is loaded as the **project layer** between global and repo config.
 
-You do not normally edit `project_dir` by hand. Use the `satori_manage` tool to set it:
+Set it by adding the line to the top of the repo-level `satori.toml`:
 
-```
-satori_manage(set_project_dir, {dir: "~/Kouzou/projects/myproject"})
+```toml
+project_dir = "~/Kouzou/projects/myproject"
 ```
 
-This writes the `project_dir` value into the repo-level `satori.toml`. Once set, the project-layer config is automatically loaded on every subsequent Satori startup in that repo.
+Once set, the project-layer config is automatically loaded on every subsequent Satori startup in that repo.
 
 ---
 
@@ -224,22 +224,23 @@ enabled = true
 
 ### `external` runtime
 
-Connects to an already-running MCP server over a network socket. Use for servers you start and manage outside of Satori, or for remote servers.
+Connects to an already-running MCP server over HTTP using the Streamable HTTP transport. Use for servers you start and manage outside of Satori, or for remote servers.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `host` | `string` | Yes | Hostname or IP address of the running server |
-| `port` | `number` | Yes | Port the server is listening on |
-| `transport` | `string` | No | Transport protocol; defaults to the server's advertised transport |
+| `url` | `string` | Yes | Full URL of the running MCP endpoint, e.g. `http://127.0.0.1:23026/mcp` |
+| `headers` | `table` | No | HTTP headers sent with every request (supports `${VAR}` env interpolation) |
 
 ```toml
 [[servers]]
-name = "my-service"
+name = "kado"
 runtime = "external"
-host = "localhost"
-port = 9000
+url = "http://127.0.0.1:23026/mcp"
+headers = { Authorization = "Bearer ${KADO_KEY}" }
 enabled = true
 ```
+
+If Satori itself runs inside a container, replace `127.0.0.1` with `host.docker.internal` (and have the downstream server bind to a host-reachable interface, not pure loopback).
 
 ---
 
@@ -310,7 +311,7 @@ enabled = true
 [[servers]]
 name = "remote-api"
 runtime = "external"
-host = "api.internal.example.com"
-port = 4000
+url = "https://api.internal.example.com/mcp"
+headers = { Authorization = "Bearer ${INTERNAL_API_KEY}" }
 enabled = true
 ```
