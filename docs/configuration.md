@@ -46,7 +46,13 @@ Gateway controls how Satori integrates with the Claude Code environment at start
 |---|---|
 | `boolean` | `false` |
 
-When `true`, Satori imports any servers defined in `.mcp.json` at startup and registers them as downstream MCP servers. This lets you use your existing `.mcp.json` without duplicating entries in `satori.toml`.
+When `true`, Satori imports any servers defined in `.mcp.json` at startup, appends them to `satori.toml`, and renames the file to `.mcp.satori-json` so the import only happens once. This lets you bootstrap from an existing `.mcp.json` without duplicating entries.
+
+Both transports are supported:
+
+- **stdio** entries (`command`, `args`, `env`) are imported as `runtime = "npx"`.
+- **HTTP** entries (`type: "http"` or any entry with a `url`) are imported as `runtime = "external"` with `url` and `headers` carried over.
+- **SSE** entries (`type: "sse"`) are skipped with a warning — the gateway only speaks Streamable HTTP.
 
 ```toml
 [gateway]
