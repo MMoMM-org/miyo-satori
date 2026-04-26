@@ -4,17 +4,45 @@
   "description": "MCP gateway server for context management and downstream tool routing",
   "type": "module",
   "main": "dist/src/index.js",
+  "bin": {
+    "miyo-satori": "dist/src/index.js"
+  },
   "files": [
     "dist/src",
     "dist/hooks",
     ".claude-plugin",
-    "satori.toml.example"
+    "satori.toml.example",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MMoMM-org/miyo-satori.git"
+  },
+  "homepage": "https://github.com/MMoMM-org/miyo-satori#readme",
+  "bugs": {
+    "url": "https://github.com/MMoMM-org/miyo-satori/issues"
+  },
+  "license": "MIT",
+  "author": "Marcus Breiden <marcus@breiden.net>",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-code",
+    "gateway",
+    "context",
+    "miyo"
   ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
