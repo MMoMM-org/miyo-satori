@@ -85,3 +85,17 @@ satori_schema("filesystem", "read_file")
 satori_exec("filesystem", "read_file", { "path": "/path/to/file" })
   → routes call to the filesystem server, captures output to context DB
 ```
+
+## Releasing a new version
+
+Releases are automated via GitHub Actions. Pushing a `v*` tag triggers a workflow that runs typecheck, tests, build, and `npm publish` with provenance.
+
+```bash
+git checkout main && git pull
+npm version patch        # or: minor / major
+git push --follow-tags
+```
+
+That is the whole release flow. The workflow at `.github/workflows/release.yml` enforces that the tag matches `package.json` so the two cannot drift.
+
+For pre-release tags (e.g. `v0.2.0-beta.0`) the workflow still publishes; consumers opt in via `npx -y miyo-satori@beta`.
