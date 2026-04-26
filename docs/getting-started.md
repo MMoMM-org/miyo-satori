@@ -208,9 +208,9 @@ If you installed satori through The Custom Startup `install.sh`, the following i
 automatically:
 
 - The MCP server entry (with an absolute path) is written to your Claude Code settings.
-- The Claude Code hooks from `.claude-plugin/hooks/hooks.json` are merged into your
-  `settings.json` so that file edits, git operations, and other session events are captured.
-  See [hooks.md](hooks.md) for hook details.
+- The Claude Code hooks are registered via `miyo-satori install-hooks` so that file edits,
+  git operations, and other session events are captured. See [hooks.md](hooks.md) for hook
+  details.
 
 **After TCS installation, customize:**
 
