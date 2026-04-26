@@ -4,11 +4,7 @@ miyo-satori is an MCP gateway server that routes tool calls to downstream MCP se
 
 ## Quick start
 
-```bash
-npm install && npm run build
-```
-
-Then add satori to your MCP config.
+No install needed — add the entry below to your MCP config and `npx` will fetch and run satori on demand.
 
 ## MCP config
 
@@ -18,14 +14,35 @@ Add the following to your Claude Code settings (`.claude/settings.json` or `~/.c
 {
   "mcpServers": {
     "satori": {
-      "command": "node",
-      "args": ["/absolute/path/to/modules/satori/dist/src/index.js"]
+      "command": "npx",
+      "args": ["-y", "miyo-satori"]
     }
   }
 }
 ```
 
-The path must be absolute — relative paths fail in Claude Code.
+The first launch downloads and caches the package; subsequent launches start instantly.
+
+### Local development
+
+If you are working on satori itself, clone the repo and point the MCP config at the built file:
+
+```bash
+git clone https://github.com/MMoMM-org/miyo-satori.git
+cd miyo-satori
+npm install && npm run build
+```
+
+```json
+{
+  "mcpServers": {
+    "satori": {
+      "command": "node",
+      "args": ["/absolute/path/to/miyo-satori/dist/src/index.js"]
+    }
+  }
+}
+```
 
 ## Configuration: satori.toml
 
