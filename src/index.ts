@@ -50,6 +50,7 @@ async function main() {
     : SessionDB.defaultDBPath(repoRoot);
   const sessionDb = new SessionDB(dbPath);
   const contentDb = new ContentDB(dbPath);
+  contentDb.pruneOlderThan(config.context?.retain_days ?? 30);
   const auditLog = new AuditLog(
     config.security?.audit_log
       ? join(repoRoot, config.security.audit_log)
