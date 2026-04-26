@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+const subcommand = process.argv[2];
+if (subcommand === 'install-hooks') {
+  const { runInstallHooksCli } = await import('../hooks/scripts/install-hooks.js');
+  runInstallHooksCli(process.argv.slice(3));
+  process.exit(0);
+}
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { join } from 'path';
