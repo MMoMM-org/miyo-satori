@@ -10,7 +10,6 @@
   "files": [
     "dist/src",
     "dist/hooks",
-    ".claude-plugin",
     "satori.toml.example",
     "README.md",
     "LICENSE"
