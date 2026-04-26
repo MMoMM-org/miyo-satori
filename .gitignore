@@ -5,3 +5,8 @@ node_modules/
 *.db-wal
 *.db-shm
 *.js.map
+/claude-docker/
+/claude-docker-home/
+/begin-code.sh
+.mcp.json
+/generated-images/
