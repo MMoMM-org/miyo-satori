@@ -142,6 +142,52 @@ command = "existing"
     expect(parsed.servers![0].url).toBe('http://example.com/mcp');
   });
 
+  it('imports explicit type=stdio entry as runtime=npx', async () => {
+    writeMcpJson(tmpDir, {
+      mcpServers: {
+        'with-type': {
+          type: 'stdio',
+          command: 'npx',
+          args: ['-y', '@pkg/srv'],
+          env: { DEBUG: '1' },
+        },
+      },
+    });
+    const config: SatoriConfig = { gateway: { auto_register_mcp_json: true } };
+    const result = await autoRegisterMcpJson(tmpDir, config);
+    expect(result.imported).toBe(1);
+
+    const parsed = readSatoriToml(tmpDir);
+    expect(parsed.servers![0].runtime).toBe('npx');
+    expect(parsed.servers![0].command).toBe('npx');
+    expect(parsed.servers![0].args).toEqual(['-y', '@pkg/srv']);
+    expect(parsed.servers![0].url).toBeUndefined();
+  });
+
+  it('skips type=stdio entry without command', async () => {
+    writeMcpJson(tmpDir, {
+      mcpServers: {
+        broken: { type: 'stdio' },
+      },
+    });
+    const config: SatoriConfig = { gateway: { auto_register_mcp_json: true } };
+    const result = await autoRegisterMcpJson(tmpDir, config);
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toBe(1);
+  });
+
+  it('skips type=http entry without url', async () => {
+    writeMcpJson(tmpDir, {
+      mcpServers: {
+        broken: { type: 'http' },
+      },
+    });
+    const config: SatoriConfig = { gateway: { auto_register_mcp_json: true } };
+    const result = await autoRegisterMcpJson(tmpDir, config);
+    expect(result.imported).toBe(0);
+    expect(result.skipped).toBe(1);
+  });
+
   it('skips SSE entries with a warning', async () => {
     writeMcpJson(tmpDir, {
       mcpServers: {

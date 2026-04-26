@@ -19,13 +19,23 @@ interface McpJson {
 type DetectedRuntime = { kind: 'npx' | 'external' } | { kind: 'skip'; reason: string };
 
 function detectRuntime(entry: McpServerEntry): DetectedRuntime {
-  if (entry.type === 'sse') {
+  // Explicit `type` wins; otherwise infer from shape (command → stdio, url → http).
+  const effectiveType =
+    entry.type ?? (entry.command ? 'stdio' : entry.url ? 'http' : undefined);
+
+  if (effectiveType === 'sse') {
     return { kind: 'skip', reason: 'SSE transport is not supported (only Streamable HTTP)' };
   }
-  if (entry.type === 'http' || (entry.url && !entry.command)) {
+  if (effectiveType === 'http') {
+    if (!entry.url) {
+      return { kind: 'skip', reason: 'http entry missing url' };
+    }
     return { kind: 'external' };
   }
-  if (entry.command) {
+  if (effectiveType === 'stdio') {
+    if (!entry.command) {
+      return { kind: 'skip', reason: 'stdio entry missing command' };
+    }
     return { kind: 'npx' };
   }
   return { kind: 'skip', reason: 'entry has neither command nor url' };
