@@ -104,6 +104,60 @@ command = "existing"
     expect(result.skipped).toBe(1);
   });
 
+  it('imports HTTP entry (type=http) as runtime=external with url and headers', async () => {
+    writeMcpJson(tmpDir, {
+      mcpServers: {
+        kado: {
+          type: 'http',
+          url: 'http://127.0.0.1:23026/mcp',
+          headers: { Authorization: 'Bearer secret-key' },
+        },
+      },
+    });
+    const config: SatoriConfig = { gateway: { auto_register_mcp_json: true } };
+    const result = await autoRegisterMcpJson(tmpDir, config);
+    expect(result.imported).toBe(1);
+
+    const parsed = readSatoriToml(tmpDir);
+    expect(parsed.servers).toHaveLength(1);
+    const kado = parsed.servers![0];
+    expect(kado.name).toBe('kado');
+    expect(kado.runtime).toBe('external');
+    expect(kado.url).toBe('http://127.0.0.1:23026/mcp');
+    expect(kado.headers).toEqual({ Authorization: 'Bearer secret-key' });
+    expect(kado.command).toBeUndefined();
+  });
+
+  it('imports HTTP entry without explicit type when url is present', async () => {
+    writeMcpJson(tmpDir, {
+      mcpServers: {
+        remote: { url: 'http://example.com/mcp' },
+      },
+    });
+    const config: SatoriConfig = { gateway: { auto_register_mcp_json: true } };
+    await autoRegisterMcpJson(tmpDir, config);
+
+    const parsed = readSatoriToml(tmpDir);
+    expect(parsed.servers![0].runtime).toBe('external');
+    expect(parsed.servers![0].url).toBe('http://example.com/mcp');
+  });
+
+  it('skips SSE entries with a warning', async () => {
+    writeMcpJson(tmpDir, {
+      mcpServers: {
+        legacy: { type: 'sse', url: 'http://example.com/sse' },
+        ok: { command: 'npx', args: ['-y', '@pkg/srv'] },
+      },
+    });
+    const config: SatoriConfig = { gateway: { auto_register_mcp_json: true } };
+    const result = await autoRegisterMcpJson(tmpDir, config);
+    expect(result.imported).toBe(1);
+    expect(result.skipped).toBe(1);
+
+    const parsed = readSatoriToml(tmpDir);
+    expect(parsed.servers!.map(s => s.name)).toEqual(['ok']);
+  });
+
   it('creates satori.toml if it does not exist', async () => {
     writeMcpJson(tmpDir, {
       mcpServers: {
