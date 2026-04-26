@@ -71,7 +71,18 @@ Satori merges configuration from three levels (global → project → repo). Cre
 
 ## Hooks setup
 
-Satori ships Claude Code hooks that capture file activity, git operations, and other session events. Add the entries from `.claude-plugin/hooks/hooks.json` to your Claude Code `hooks` configuration (`.claude/settings.json`).
+Satori ships Claude Code hooks that capture file activity, git operations, and other session events. The `miyo-satori install-hooks` subcommand registers them in your Claude Code `settings.json` for you.
+
+For stable hook paths across satori updates, install satori globally so the install path does not move:
+
+```bash
+npm install -g miyo-satori
+miyo-satori install-hooks
+```
+
+This registers hook entries in `<cwd>/.claude/settings.json` if it exists, otherwise `~/.claude/settings.json`. Override the destination with `--settings <path>` or the `SATORI_HOOKS_SETTINGS` environment variable. Re-run the same command after `npm install -g miyo-satori@latest` to refresh the paths if the global location ever moves.
+
+`npx -y miyo-satori install-hooks` also works but writes paths into the npx cache directory, which gets invalidated on version bumps. You'll see a warning when the install detects this.
 
 ## Usage example
 
