@@ -159,6 +159,22 @@ command = "@org/repo-server"
     expect(config.servers![0].name).toBe('only-repo');
   });
 
+  it('parses external (HTTP) server with url and headers', () => {
+    writeTOML(tmpDir, 'satori.toml', `
+[[servers]]
+name = "kado"
+runtime = "external"
+url = "http://127.0.0.1:23026/mcp"
+headers = { Authorization = "Bearer \${KADO_KEY}" }
+`);
+    const config = loadConfig(tmpDir);
+    expect(config.servers).toHaveLength(1);
+    const kado = config.servers![0];
+    expect(kado.runtime).toBe('external');
+    expect(kado.url).toBe('http://127.0.0.1:23026/mcp');
+    expect(kado.headers).toEqual({ Authorization: 'Bearer ${KADO_KEY}' });
+  });
+
   it('parses all TOML scalar types correctly', () => {
     writeTOML(tmpDir, 'satori.toml', `
 [gateway]

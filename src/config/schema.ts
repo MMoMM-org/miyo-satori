@@ -32,6 +32,8 @@ export interface ServerConfig {
   host?: string;
   port?: number;
   transport?: string;
+  url?: string;
+  headers?: Record<string, string>;
 }
 
 export interface HandlerConfig {

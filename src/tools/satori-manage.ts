@@ -68,6 +68,13 @@ function serializeServerBlock(server: ServerConfig): string {
   if (server.host !== undefined) lines.push(`host = "${server.host}"`);
   if (server.port !== undefined) lines.push(`port = ${server.port}`);
   if (server.transport !== undefined) lines.push(`transport = "${server.transport}"`);
+  if (server.url !== undefined) lines.push(`url = "${server.url}"`);
+  if (server.headers !== undefined && Object.keys(server.headers).length > 0) {
+    const headerParts = Object.entries(server.headers)
+      .map(([k, v]) => `${k} = "${v.replace(/"/g, '\\"')}"`)
+      .join(', ');
+    lines.push(`headers = { ${headerParts} }`);
+  }
 
   return lines.join('\n');
 }

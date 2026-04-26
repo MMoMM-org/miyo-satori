@@ -39,3 +39,15 @@
 # host = "localhost"
 # port = 9000
 # enabled = true
+
+# HTTP MCP server (Streamable HTTP transport, e.g. Kado / Obsidian)
+# Headers support ${ENV_VAR} expansion so secrets stay out of the toml.
+# [[servers]]
+# name = "kado"
+# runtime = "external"
+# url = "http://127.0.0.1:23026/mcp"
+# headers = { Authorization = "Bearer ${KADO_KEY}" }
+# enabled = true
+#
+# Note: if Satori itself runs inside a container, replace 127.0.0.1 with
+# host.docker.internal (and have Kado bind on 0.0.0.0:23026).

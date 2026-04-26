@@ -17,6 +17,7 @@ import { GatewayRouter } from './gateway/router.js';
 import { LifecycleManager } from './lifecycle/manager.js';
 import { NpxRuntime } from './lifecycle/runtimes/npx.js';
 import { DockerRuntime } from './lifecycle/runtimes/docker.js';
+import { HttpRuntime } from './lifecycle/runtimes/http.js';
 import { HandlerRegistry } from './handlers/registry.js';
 import { SecurityScanner } from './security/scanner.js';
 import { AuditLog } from './security/audit-log.js';
@@ -75,6 +76,7 @@ async function main() {
   const lifecycle = new LifecycleManager();
   lifecycle.registerRuntime('npx', new NpxRuntime());
   lifecycle.registerRuntime('docker', new DockerRuntime());
+  lifecycle.registerRuntime('external', new HttpRuntime());
 
   // Security scan at startup
   const scanner = new SecurityScanner(auditLog);
