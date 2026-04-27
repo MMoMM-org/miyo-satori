@@ -15,7 +15,7 @@ export function registerSatoriManage(
   registry: ServerRegistry,
   repoRoot: string,
 ): void {
-  const auditLogPath = join(repoRoot, '.satori', 'scanner.log');
+  const auditLogPath = join(repoRoot, 'satori', 'scanner.log');
   const auditLog = new AuditLog(auditLogPath);
   const scanner = new SecurityScanner(auditLog);
 

@@ -45,6 +45,6 @@ export abstract class SQLiteBase {
   }
 
   static defaultDBPath(repoRoot: string): string {
-    return join(repoRoot, '.satori', 'db.sqlite');
+    return join(repoRoot, 'satori', 'db.sqlite');
   }
 }

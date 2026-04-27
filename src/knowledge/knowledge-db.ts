@@ -439,7 +439,7 @@ export class KnowledgeDB extends SQLiteBase {
   // ---------------------------------------------------------------------------
 
   static kbPath(repoRoot: string): string {
-    return join(repoRoot, '.satori', 'kb.sqlite');
+    return join(repoRoot, 'satori', 'kb.sqlite');
   }
 
   /** Expose trigramAvailable for tests / diagnostics */

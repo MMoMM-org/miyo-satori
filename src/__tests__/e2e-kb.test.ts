@@ -45,8 +45,8 @@ describe('E2E: satori_kb integration', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('kbPath returns .satori/kb.sqlite', () => {
-    expect(KnowledgeDB.kbPath('/some/repo')).toBe('/some/repo/.satori/kb.sqlite');
+  it('kbPath returns satori/kb.sqlite', () => {
+    expect(KnowledgeDB.kbPath('/some/repo')).toBe('/some/repo/satori/kb.sqlite');
   });
 
   it('index markdown: chunks by heading', () => {

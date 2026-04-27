@@ -1,11 +1,17 @@
 import { SessionDB } from '../../src/context/session-db.js';
-import { extractSessionId, getRepoRoot, readStdinPayload } from './utils.js';
+import { extractSessionId, getRepoRoot, readStdinPayload, resolveHookPaths } from './utils.js';
 
 async function main(): Promise<void> {
   const payload = readStdinPayload();
   const sessionId = extractSessionId(payload);
   const repoRoot = getRepoRoot();
-  const dbPath = SessionDB.defaultDBPath(repoRoot);
+
+  // Guard: exit 0 silently if Satori is not configured for this repo
+  const paths = resolveHookPaths(repoRoot);
+  if (!paths) {
+    process.exit(0);
+  }
+  const { dbPath } = paths;
 
   let sessionDb: SessionDB | null = null;
   try {

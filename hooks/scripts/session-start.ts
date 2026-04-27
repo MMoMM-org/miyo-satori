@@ -1,19 +1,17 @@
-import { existsSync } from 'fs';
-import { join } from 'path';
 import { SessionDB } from '../../src/context/session-db.js';
-import { extractSessionId, getRepoRoot, readStdinPayload } from './utils.js';
+import { extractSessionId, getRepoRoot, readStdinPayload, resolveHookPaths } from './utils.js';
 
 async function main(): Promise<void> {
   const payload = readStdinPayload();
   const sessionId = extractSessionId(payload);
   const repoRoot = getRepoRoot();
 
-  // Guard: exit 0 silently if .satori/ does not exist (Satori not installed)
-  if (!existsSync(join(repoRoot, '.satori'))) {
+  // Guard: exit 0 silently if Satori is not configured for this repo
+  const paths = resolveHookPaths(repoRoot);
+  if (!paths) {
     process.exit(0);
   }
-
-  const dbPath = SessionDB.defaultDBPath(repoRoot);
+  const { dbPath } = paths;
 
   let sessionDb: SessionDB | null = null;
   try {

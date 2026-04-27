@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-const subcommand = process.argv[2];
-if (subcommand === 'install-hooks') {
+const cliArgs = process.argv.slice(2);
+if (cliArgs[0] === 'install-hooks') {
   const { runInstallHooksCli } = await import('../hooks/scripts/install-hooks.js');
-  runInstallHooksCli(process.argv.slice(3));
+  runInstallHooksCli(cliArgs.slice(1));
   process.exit(0);
 }
 
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { join } from 'path';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { loadConfig } from './config/loader.js';
 import { autoRegisterMcpJson } from './config/auto-register.js';
+import { resolveStorageDir, resolveFilePath } from './config/storage.js';
 import { ServerRegistry } from './gateway/registry.js';
 import { ToolCatalog } from './gateway/catalog.js';
 import { GatewayRouter } from './gateway/router.js';
@@ -33,10 +33,28 @@ import { KnowledgeDB } from './knowledge/knowledge-db.js';
 import { PolyglotExecutor } from './execution/executor.js';
 import { BuiltinServer } from './execution/builtin-server.js';
 
+interface ParsedFlags {
+  root?: string;
+  storage?: string;
+}
+
+function parseFlags(argv: string[]): ParsedFlags {
+  const out: ParsedFlags = {};
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--root' && i + 1 < argv.length) {
+      out.root = argv[++i];
+    } else if ((argv[i] === '--storage' || argv[i] === '--project') && i + 1 < argv.length) {
+      out.storage = argv[++i];
+    }
+  }
+  return out;
+}
+
 const server = new McpServer({ name: 'satori', version: '0.1.0' });
 
 async function main() {
-  const repoRoot = process.cwd();
+  const flags = parseFlags(cliArgs);
+  const repoRoot = flags.root ?? process.cwd();
 
   // Config
   const config = loadConfig(repoRoot);
@@ -44,21 +62,22 @@ async function main() {
     await autoRegisterMcpJson(repoRoot, config);
   }
 
+  // Storage location: CLI flag → toml setting → default repo-local
+  const storageDir = resolveStorageDir({ storage: flags.storage }, config, repoRoot);
+
   // Infrastructure
-  const dbPath = config.context?.db_path
-    ? join(repoRoot, config.context.db_path)
-    : SessionDB.defaultDBPath(repoRoot);
+  const dbPath = resolveFilePath(storageDir, config.context?.db_path, 'db.sqlite');
   const sessionDb = new SessionDB(dbPath);
   const contentDb = new ContentDB(dbPath);
   contentDb.pruneOlderThan(config.context?.retain_days ?? 30);
   const auditLog = new AuditLog(
-    config.security?.audit_log
-      ? join(repoRoot, config.security.audit_log)
-      : join(repoRoot, '.satori', 'scanner.log'),
+    resolveFilePath(storageDir, config.security?.audit_log, 'scanner.log'),
   );
 
   // Knowledge + execution
-  const knowledgeDb = new KnowledgeDB(KnowledgeDB.kbPath(repoRoot));
+  const knowledgeDb = new KnowledgeDB(
+    resolveFilePath(storageDir, config.context?.kb_path, 'kb.sqlite'),
+  );
   const executor = new PolyglotExecutor();
   const builtinServer = new BuiltinServer(executor, knowledgeDb);
 

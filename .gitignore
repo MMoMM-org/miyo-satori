@@ -1,5 +1,6 @@
 dist/
 node_modules/
+satori/
 .satori/
 *.db
 *.db-wal

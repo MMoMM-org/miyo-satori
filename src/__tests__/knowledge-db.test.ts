@@ -32,8 +32,8 @@ describe('KnowledgeDB', () => {
     expect(db).toBeTruthy();
   });
 
-  it('kbPath() returns .satori/kb.sqlite under repoRoot', () => {
-    expect(KnowledgeDB.kbPath('/some/repo')).toBe('/some/repo/.satori/kb.sqlite');
+  it('kbPath() returns satori/kb.sqlite under repoRoot', () => {
+    expect(KnowledgeDB.kbPath('/some/repo')).toBe('/some/repo/satori/kb.sqlite');
   });
 
   // -------------------------------------------------------------------------

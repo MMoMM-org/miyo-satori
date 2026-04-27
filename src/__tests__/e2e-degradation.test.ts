@@ -1,17 +1,18 @@
 /**
  * E2E: Graceful degradation tests
- * Covers PRD F2 — hooks exit 0 silently when .satori/ absent
+ * Covers PRD F2 — hooks exit 0 silently when no satori.toml in repoRoot
  * Covers PRD — satori_manage disable stops builtin tool dispatch
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { vi } from 'vitest';
+import { resolveHookPaths } from '../../hooks/scripts/utils.js';
 
 // ─── Hook guard logic ────────────────────────────────────────────────────────
 
-describe('Hook .satori/ guard — unit', () => {
+describe('Hook satori.toml guard — unit', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -22,16 +23,16 @@ describe('Hook .satori/ guard — unit', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('guard returns false when .satori/ does not exist', () => {
-    const satoriDir = join(tmpDir, '.satori');
-    expect(existsSync(satoriDir)).toBe(false);
+  it('returns null when satori.toml does not exist (Satori not configured for this repo)', () => {
+    expect(resolveHookPaths(tmpDir)).toBeNull();
   });
 
-  it('guard returns true when .satori/ exists', () => {
-    const { mkdirSync } = require('fs') as typeof import('fs');
-    const satoriDir = join(tmpDir, '.satori');
-    mkdirSync(satoriDir);
-    expect(existsSync(satoriDir)).toBe(true);
+  it('returns resolved paths when satori.toml exists (default storage = repoRoot/satori)', () => {
+    writeFileSync(join(tmpDir, 'satori.toml'), '', 'utf-8');
+    const paths = resolveHookPaths(tmpDir);
+    expect(paths).not.toBeNull();
+    expect(paths!.dbPath).toBe(join(tmpDir, 'satori', 'db.sqlite'));
+    expect(paths!.kbPath).toBe(join(tmpDir, 'satori', 'kb.sqlite'));
   });
 });
 
