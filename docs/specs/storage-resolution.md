@@ -2,7 +2,9 @@
 
 > Status: Draft, agreed in principle (2026-04-27). Not yet implemented.
 > Companion spec: `(client, session_id)` model — separate doc, lands after this.
-> Related: `busy_timeout` pragma fix (independent, ships as 1-line PR before this).
+> Prerequisite (resolved): `busy_timeout` for concurrent writers is already
+> provided by better-sqlite3's default (5000 ms). Regression-tested in
+> `src/__tests__/db-base.test.ts`.
 
 ## Problem
 
@@ -170,12 +172,12 @@ function resolveStorageDir(args, config, repoRoot): string {
 6. Tests: unit-test `resolveStorageDir` against the value table,
    integration-test that startup honours `--storage` and toml setting.
 
-## Companion: `busy_timeout` pragma
+## Companion: `busy_timeout` (resolved)
 
-Independently of this spec, shared storage will produce concurrent
-SQLite writers (multiple Satori processes pointing at the same DB).
-The 1-line fix in `src/db-base.ts:applyWALPragmas` adding
-`this.db.pragma('busy_timeout = 5000')` ships as a separate PR before
-this storage refactor. It is unconditionally beneficial (helps the
-parallel-Claudes-in-same-repo case today) and a prerequisite for the
-shared-storage scenario.
+Shared storage produces concurrent SQLite writers (multiple Satori
+processes pointing at the same DB). Investigation showed
+`better-sqlite3` already sets `busy_timeout = 5000` as its built-in
+default, surviving Satori's WAL pragma application — verified by a
+behavioral assertion in `src/__tests__/db-base.test.ts`. No code change
+needed; the prerequisite is satisfied for both the existing
+parallel-Claudes-in-same-repo case and the new shared-storage case.
