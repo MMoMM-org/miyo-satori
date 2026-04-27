@@ -1,8 +1,10 @@
 # `(client, session_id)` Identity Model — Design Spec
 
-> Status: Draft, agreed in principle (2026-04-27). Not yet implemented.
-> Companion to: `storage-resolution.md` (already implemented). Required
-> when storage is shared across multiple repos.
+> Status: **Phases 1–3 implemented and merged (2026-04-27).** Phase 4
+> (cross-tenant refusal + optional `client?` parameter on tool inputSchemas)
+> is deferred — see `docs/ai/memory/context.md` under "Deferred Review Items".
+> Companion to: `storage-resolution.md`. Required when storage is shared
+> across multiple repos.
 
 ## Problem
 

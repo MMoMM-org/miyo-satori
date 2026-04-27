@@ -220,6 +220,11 @@ automatically:
   `project_dir = "/absolute/path/to/project"` to the top of the repo-level
   `satori.toml`. See [configuration.md](configuration.md) for the three-layer
   merge model.
+- If multiple repos also share `storage_dir` (so they all write into the same
+  SQLite file), each one needs a distinct `client` so their data stays
+  isolated. The default `basename(repoRoot)` is usually enough; override with
+  `--client <name>` in the MCP `args` only when basenames collide. See
+  [configuration.md — `client`](configuration.md#client).
 
 ---
 

@@ -140,7 +140,29 @@ At the start of a session, call `satori_context(restore)` to retrieve a compact 
 
 When Claude Code is about to compact the conversation, the `PreCompact` hook triggers `satori_context(flush)`, which writes a session guide entry to the database. This ensures the most important context survives compaction and is available to `satori_context(restore)` in the next session.
 
+`restore` without an explicit `session_id` returns the **latest unconsumed resume for the current client across all sessions**. This solves "fresh-start blindness" — a new `claude` invocation in a repo gets a brand-new session UUID, but the previous session's resume is still recovered because the lookup is scoped by `client`, not `session_id`. See the next section for what `client` actually is.
+
 Without hooks, the context database stays empty. See [hooks.md](hooks.md) for setup instructions.
+
+---
+
+## Tenant model: `(client, session_id)`
+
+Every row Satori writes — captures, events, resumes, KB chunks — is tagged with two identifiers:
+
+| Identifier | Scope | Stability | Source |
+|---|---|---|---|
+| `client` | A working scope: usually one repo, or a shared-tenant within shared storage | **Stable** across Claude restarts | `--client` flag → `[context] client` in toml → `basename(repoRoot)` |
+| `session_id` | One Claude Code conversation | Transient — fresh on `claude`, stable on `--continue` | `transcript_path` UUID (hooks) or `--session-id` / `$CLAUDE_SESSION_ID` (tool-calls) |
+
+Together they form the primary key for every read and write. The two scopes solve different problems:
+
+- **`client` solves shared-storage cross-talk.** With `storage_dir = "miyo"`, four MiYo repos write into one DB. Without `client`, every query would return mixed results from all four; with `client`, each Satori process only sees its own rows. Pruning, search, status counts, and KB lookups all filter by `client` automatically — there is no cross-tenant access from the tool surface in this version.
+- **`session_id` solves intra-session correlation.** A single Claude Code conversation produces many tool calls and many hook events; they all join cleanly because they share one `session_id`.
+
+The hooks resolve `client` the same way the MCP server does, so the hook-written and tool-call-written rows always agree. Two hooks/tool-calls disagreeing on `client` or `session_id` was the latent bug this model was introduced to fix.
+
+For most users this is invisible — `basename(repoRoot)` is a sensible default and Claude Code provides the `session_id`. Override `--client` only when basenames collide, or to explicitly tag a Satori process with a logical name (`personal`, `work`) independent of the working directory. See [configuration.md — `client`](configuration.md#client) for the full resolution rules.
 
 ---
 

@@ -48,6 +48,8 @@ npm install && npm run build
 
 Satori merges configuration from three levels (global → project → repo). Create a `satori.toml` at the repo root (or `~/.satori/config.toml` for global defaults). See `satori.toml.example` for all available fields with comments.
 
+Every row Satori writes is tagged with a `client` (defaults to `basename(repoRoot)`) so that two repos sharing one storage location stay isolated. Override with `--client <name>` in the MCP `args`, or with `[context] client = "..."` in `satori.toml`. See [`docs/configuration.md`](docs/configuration.md#client) and [`docs/concepts.md`](docs/concepts.md#tenant-model-client-session_id) for the full tenant model.
+
 ## Tools
 
 | Tool | Description |
