@@ -11,6 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { loadConfig } from './config/loader.js';
 import { autoRegisterMcpJson } from './config/auto-register.js';
 import { resolveStorageDir, resolveFilePath } from './config/storage.js';
+import { resolveClient } from './config/client.js';
 import { ServerRegistry } from './gateway/registry.js';
 import { ToolCatalog } from './gateway/catalog.js';
 import { GatewayRouter } from './gateway/router.js';
@@ -36,6 +37,7 @@ import { BuiltinServer } from './execution/builtin-server.js';
 interface ParsedFlags {
   root?: string;
   storage?: string;
+  client?: string;
 }
 
 function parseFlags(argv: string[]): ParsedFlags {
@@ -45,6 +47,8 @@ function parseFlags(argv: string[]): ParsedFlags {
       out.root = argv[++i];
     } else if ((argv[i] === '--storage' || argv[i] === '--project') && i + 1 < argv.length) {
       out.storage = argv[++i];
+    } else if (argv[i] === '--client' && i + 1 < argv.length) {
+      out.client = argv[++i];
     }
   }
   return out;
@@ -64,6 +68,9 @@ async function main() {
 
   // Storage location: CLI flag → toml setting → default repo-local
   const storageDir = resolveStorageDir({ storage: flags.storage }, config, repoRoot);
+  // Client identifier: CLI flag → toml setting → basename(repoRoot)
+  // Plumbed into captures/events/resumes/chunks in phase 2.
+  void resolveClient({ client: flags.client }, config, repoRoot);
 
   // Infrastructure
   const dbPath = resolveFilePath(storageDir, config.context?.db_path, 'db.sqlite');

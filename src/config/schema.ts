@@ -6,6 +6,7 @@ export interface ContextConfig {
   db_path?: string;
   kb_path?: string;
   storage_dir?: string;
+  client?: string;
   session_guide_max_bytes?: number;
   retain_days?: number;
   backend?: 'satori' | 'kairn';

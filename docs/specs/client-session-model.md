@@ -71,6 +71,8 @@ same string.
 |---|---|
 | No `session_id` arg | Return latest resume for `client = currentClient` (any session within this client) — solves fresh-start blindness |
 | Explicit `session_id` | Return that specific session's resume; require it to belong to current `client` (refuse cross-tenant reads) |
+**note:** if we have no session_id we should return not all from the client. it should be the latest X records.. plus an information to ask for more if neccessary
+question would be what is X...
 
 `satori_context(query)` gains an analogous filter: default `client =
 currentClient`, optional override.
