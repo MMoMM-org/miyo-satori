@@ -1,6 +1,6 @@
 # Storage Resolution — Design Spec
 
-> Status: Draft, agreed in principle (2026-04-27). Not yet implemented.
+> Status: Implemented (2026-04-27).
 > Companion spec: `(client, session_id)` model — separate doc, lands after this.
 > Prerequisite (resolved): `busy_timeout` for concurrent writers is already
 > provided by better-sqlite3's default (5000 ms). Regression-tested in

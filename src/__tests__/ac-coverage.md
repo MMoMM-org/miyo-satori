@@ -12,7 +12,7 @@ Maps PRD acceptance criteria (F1–F7) to test files and test names.
 | `install.sh` shows context-mode opt-in prompt | Manual smoke test (T4.4) | — | ✅ manual |
 | `satori.toml` gets `[context]` block on yes | Manual smoke test (T4.4) | — | ✅ manual |
 | No `[context]` block written on no | Manual smoke test (T4.4) | — | ✅ manual |
-| Session start reminder when context-mode active | `e2e-degradation.test.ts` | `guard returns true when .satori/ exists` | ✅ |
+| Session start reminder when context-mode active | `e2e-degradation.test.ts` | `returns resolved paths when satori.toml exists` | ✅ |
 
 ---
 
@@ -20,9 +20,9 @@ Maps PRD acceptance criteria (F1–F7) to test files and test names.
 
 | AC | Test File | Test Name | Status |
 |----|-----------|-----------|--------|
-| Hook checks for `.satori/` directory | `e2e-degradation.test.ts` | `guard returns false when .satori/ does not exist` | ✅ |
-| Hook checks for `.satori/` directory (present) | `e2e-degradation.test.ts` | `guard returns true when .satori/ exists` | ✅ |
-| Hook silently skips Satori call when absent | `e2e-degradation.test.ts` | `guard returns false when .satori/ does not exist` | ✅ |
+| Hook checks for `satori.toml` | `e2e-degradation.test.ts` | `returns null when satori.toml does not exist` | ✅ |
+| Hook checks for `satori.toml` (present) | `e2e-degradation.test.ts` | `returns resolved paths when satori.toml exists` | ✅ |
+| Hook silently skips Satori call when absent | `e2e-degradation.test.ts` | `returns null when satori.toml does not exist` | ✅ |
 
 ---
 
@@ -51,7 +51,7 @@ Maps PRD acceptance criteria (F1–F7) to test files and test names.
 | 9th search blocked with redirect | `e2e-kb.test.ts` | `throttle: blocks after 8 searches per session` | ✅ |
 | `contentType: "code"` filter works | `e2e-kb.test.ts` | `search: contentType filter returns only matching type` | ✅ |
 | `kb.sqlite` auto-created on first index | `e2e-kb.test.ts` | (beforeAll creates KB in tmp dir — schema auto-created) | ✅ |
-| `kbPath` returns correct path | `e2e-kb.test.ts` | `kbPath returns .satori/kb.sqlite` | ✅ |
+| `kbPath` returns correct path | `e2e-kb.test.ts` | `kbPath returns satori/kb.sqlite` | ✅ |
 | Performance < 200ms for moderate corpus | `e2e-kb.test.ts` | `search: performance < 200ms for moderate corpus` | ✅ |
 
 ---
@@ -60,8 +60,8 @@ Maps PRD acceptance criteria (F1–F7) to test files and test names.
 
 | AC | Test File | Test Name | Status |
 |----|-----------|-----------|--------|
-| PostToolUse hook captures to context DB | `e2e-degradation.test.ts` | `guard returns true when .satori/ exists` (guard passes, hook runs) | ✅ |
-| PostToolUse hook exits 0 when Satori absent | `e2e-degradation.test.ts` | `guard returns false when .satori/ does not exist` | ✅ |
+| PostToolUse hook captures to context DB | `e2e-degradation.test.ts` | `returns resolved paths when satori.toml exists` (guard passes, hook runs) | ✅ |
+| PostToolUse hook exits 0 when Satori absent | `e2e-degradation.test.ts` | `returns null when satori.toml does not exist` | ✅ |
 | PreCompact hook flushes session guide | Unit test via hook guard logic | (guard tested; full pre-compact hook tested manually T4.4) | ✅ manual |
 
 ---

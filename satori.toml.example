@@ -11,7 +11,15 @@
 # auto_register_mcp_json = false   # import .mcp.json servers at startup
 
 [context]
-# db_path = ".satori/db.sqlite"    # relative to repo root
+# storage_dir = "repo"            # where db.sqlite/kb.sqlite/scanner.log live.
+                                  # values: "repo" (default → <repoRoot>/satori/),
+                                  # "project" (→ <project_dir>/satori/),
+                                  # "global" (→ ~/.satori/data/),
+                                  # "<bare-name>" (→ ~/.satori/projects/<name>/),
+                                  # "/abs/path" or "~/path" (used as-is).
+                                  # CLI override: --storage <value> or --project <name>.
+# db_path = "db.sqlite"            # filename within storage_dir; abs paths used as-is
+# kb_path = "kb.sqlite"            # filename within storage_dir; abs paths used as-is
 # session_guide_max_bytes = 2048   # max XML snapshot size
 # retain_days = 30                 # prune captures older than N days
 
@@ -22,7 +30,7 @@
 # startup_scan = true              # scan server configs at startup
 # runtime_scan = true              # scan tool arguments before every call
 # return_scan = false              # scan tool responses (slower)
-# audit_log = ".satori/scanner.log"
+# audit_log = "scanner.log"        # filename within storage_dir; abs paths used as-is
 
 # Downstream server examples:
 # [[servers]]
