@@ -3,6 +3,7 @@ import { SQLiteBase } from '../db-base.js';
 
 export interface SessionEvent {
   id: number;
+  client: string;
   session_id: string;
   type: string;
   category: string;
@@ -14,6 +15,7 @@ export interface SessionEvent {
 }
 
 export interface SessionMeta {
+  client: string;
   session_id: string;
   project_dir: string;
   started_at: string;
@@ -24,6 +26,7 @@ export interface SessionMeta {
 
 export interface SessionResume {
   id: number;
+  client: string;
   session_id: string;
   snapshot: string;
   event_count: number;
@@ -46,6 +49,7 @@ export class SessionDB extends SQLiteBase {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session_events (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        client      TEXT    NOT NULL DEFAULT '',
         session_id  TEXT    NOT NULL,
         type        TEXT    NOT NULL,
         category    TEXT    NOT NULL,
@@ -57,26 +61,30 @@ export class SessionDB extends SQLiteBase {
       );
 
       CREATE TABLE IF NOT EXISTS session_meta (
-        session_id    TEXT    PRIMARY KEY,
+        client        TEXT    NOT NULL DEFAULT '',
+        session_id    TEXT    NOT NULL,
         project_dir   TEXT    NOT NULL,
         started_at    TEXT    NOT NULL DEFAULT (datetime('now')),
         last_event_at TEXT,
         event_count   INTEGER NOT NULL DEFAULT 0,
-        compact_count INTEGER NOT NULL DEFAULT 0
+        compact_count INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (client, session_id)
       );
 
       CREATE TABLE IF NOT EXISTS session_resume (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        session_id  TEXT    NOT NULL UNIQUE,
+        client      TEXT    NOT NULL DEFAULT '',
+        session_id  TEXT    NOT NULL,
         snapshot    TEXT    NOT NULL,
         event_count INTEGER NOT NULL,
         created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-        consumed    INTEGER NOT NULL DEFAULT 0
+        consumed    INTEGER NOT NULL DEFAULT 0,
+        UNIQUE (client, session_id)
       );
 
-      CREATE INDEX IF NOT EXISTS idx_session_events_session  ON session_events(session_id);
-      CREATE INDEX IF NOT EXISTS idx_session_events_type     ON session_events(session_id, type);
-      CREATE INDEX IF NOT EXISTS idx_session_events_priority ON session_events(session_id, priority);
+      CREATE INDEX IF NOT EXISTS idx_session_events_client_session  ON session_events(client, session_id);
+      CREATE INDEX IF NOT EXISTS idx_session_events_type     ON session_events(client, session_id, type);
+      CREATE INDEX IF NOT EXISTS idx_session_events_priority ON session_events(client, session_id, priority);
     `);
   }
 
@@ -86,6 +94,7 @@ export class SessionDB extends SQLiteBase {
   }
 
   insertEvent(
+    client: string,
     sessionId: string,
     type: string,
     category: string,
@@ -100,10 +109,10 @@ export class SessionDB extends SQLiteBase {
       const recent = this.db
         .prepare(
           `SELECT type, data_hash FROM session_events
-           WHERE session_id = ?
+           WHERE client = ? AND session_id = ?
            ORDER BY id DESC LIMIT 5`,
         )
-        .all(sessionId) as { type: string; data_hash: string }[];
+        .all(client, sessionId) as { type: string; data_hash: string }[];
 
       const isDuplicate = recent.some(
         (row) => row.type === type && row.data_hash === dataHash,
@@ -113,19 +122,19 @@ export class SessionDB extends SQLiteBase {
       // Eviction: if at 1000+, remove lowest-priority (then oldest) event
       const count = (
         this.db
-          .prepare('SELECT COUNT(*) as cnt FROM session_events WHERE session_id = ?')
-          .get(sessionId) as { cnt: number }
+          .prepare('SELECT COUNT(*) as cnt FROM session_events WHERE client = ? AND session_id = ?')
+          .get(client, sessionId) as { cnt: number }
       ).cnt;
 
       if (count >= 1000) {
         const toEvict = this.db
           .prepare(
             `SELECT id FROM session_events
-             WHERE session_id = ?
+             WHERE client = ? AND session_id = ?
              ORDER BY priority DESC, id ASC
              LIMIT 1`,
           )
-          .get(sessionId) as { id: number } | undefined;
+          .get(client, sessionId) as { id: number } | undefined;
 
         if (toEvict) {
           this.db
@@ -138,10 +147,10 @@ export class SessionDB extends SQLiteBase {
       this.db
         .prepare(
           `INSERT INTO session_events
-             (session_id, type, category, priority, data, source_hook, data_hash)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (client, session_id, type, category, priority, data, source_hook, data_hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(sessionId, type, category, priority, data, sourceHook, dataHash);
+        .run(client, sessionId, type, category, priority, data, sourceHook, dataHash);
 
       // Update session_meta
       this.db
@@ -149,78 +158,95 @@ export class SessionDB extends SQLiteBase {
           `UPDATE session_meta
            SET event_count = event_count + 1,
                last_event_at = datetime('now')
-           WHERE session_id = ?`,
+           WHERE client = ? AND session_id = ?`,
         )
-        .run(sessionId);
+        .run(client, sessionId);
     });
 
     insert();
   }
 
-  ensureSession(sessionId: string, projectDir: string): void {
+  ensureSession(client: string, sessionId: string, projectDir: string): void {
     this.db
       .prepare(
-        `INSERT INTO session_meta (session_id, project_dir)
-         VALUES (?, ?)
-         ON CONFLICT(session_id) DO NOTHING`,
+        `INSERT INTO session_meta (client, session_id, project_dir)
+         VALUES (?, ?, ?)
+         ON CONFLICT(client, session_id) DO NOTHING`,
       )
-      .run(sessionId, projectDir);
+      .run(client, sessionId, projectDir);
   }
 
-  getEvents(sessionId: string): SessionEvent[] {
+  getEvents(client: string, sessionId: string): SessionEvent[] {
     return this.db
       .prepare(
-        'SELECT * FROM session_events WHERE session_id = ? ORDER BY id ASC',
+        'SELECT * FROM session_events WHERE client = ? AND session_id = ? ORDER BY id ASC',
       )
-      .all(sessionId) as SessionEvent[];
+      .all(client, sessionId) as SessionEvent[];
   }
 
-  getResume(sessionId: string): SessionResume | null {
+  getResume(client: string, sessionId: string): SessionResume | null {
     const row = this.db
       .prepare(
         `SELECT * FROM session_resume
-         WHERE session_id = ? AND consumed = 0
+         WHERE client = ? AND session_id = ? AND consumed = 0
          ORDER BY id DESC LIMIT 1`,
       )
-      .get(sessionId) as SessionResume | undefined;
+      .get(client, sessionId) as SessionResume | undefined;
 
     return row ?? null;
   }
 
+  /**
+   * Cross-session restore: latest resume for a client, regardless of session_id.
+   * Solves fresh-start blindness — `claude` in repo X gets the previous session's
+   * resume back even though the new UUID has no captures yet.
+   */
+  getLatestResumeForClient(client: string): SessionResume | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM session_resume
+         WHERE client = ? AND consumed = 0
+         ORDER BY id DESC LIMIT 1`,
+      )
+      .get(client) as SessionResume | undefined;
+    return row ?? null;
+  }
+
   upsertResume(
+    client: string,
     sessionId: string,
     snapshot: string,
     eventCount: number,
   ): void {
     this.db
       .prepare(
-        `INSERT INTO session_resume (session_id, snapshot, event_count)
-         VALUES (?, ?, ?)
-         ON CONFLICT(session_id) DO UPDATE SET
+        `INSERT INTO session_resume (client, session_id, snapshot, event_count)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(client, session_id) DO UPDATE SET
            snapshot = excluded.snapshot,
            event_count = excluded.event_count,
            created_at = datetime('now'),
            consumed = 0`,
       )
-      .run(sessionId, snapshot, eventCount);
+      .run(client, sessionId, snapshot, eventCount);
   }
 
-  markResumeConsumed(sessionId: string): void {
+  markResumeConsumed(client: string, sessionId: string): void {
     this.db
       .prepare(
-        'UPDATE session_resume SET consumed = 1 WHERE session_id = ?',
+        'UPDATE session_resume SET consumed = 1 WHERE client = ? AND session_id = ?',
       )
-      .run(sessionId);
+      .run(client, sessionId);
   }
 
-  incrementCompactCount(sessionId: string): void {
+  incrementCompactCount(client: string, sessionId: string): void {
     this.db
       .prepare(
         `UPDATE session_meta
          SET compact_count = compact_count + 1
-         WHERE session_id = ?`,
+         WHERE client = ? AND session_id = ?`,
       )
-      .run(sessionId);
+      .run(client, sessionId);
   }
 
   getSessionStats(): SessionStats {

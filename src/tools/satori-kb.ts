@@ -14,7 +14,7 @@ const inputSchema = {
   session_id: z.string().optional(),
 };
 
-export function registerSatoriKb(server: McpServer, knowledgeDb: KnowledgeDB): void {
+export function registerSatoriKb(server: McpServer, knowledgeDb: KnowledgeDB, client: string): void {
   server.tool(
     'satori_kb',
     'Knowledge base: index markdown content or URLs, search with BM25+RRF, retrieve smart snippets',
@@ -30,6 +30,7 @@ export function registerSatoriKb(server: McpServer, knowledgeDb: KnowledgeDB): v
               };
             }
             const chunkCount = knowledgeDb.index({
+              client,
               content: args.content,
               title: args.title,
               type: args.type,
@@ -48,6 +49,7 @@ export function registerSatoriKb(server: McpServer, knowledgeDb: KnowledgeDB): v
               };
             }
             const result = knowledgeDb.search({
+              client,
               query: args.query,
               contentType: args.contentType,
               limit: args.limit,
@@ -67,6 +69,7 @@ export function registerSatoriKb(server: McpServer, knowledgeDb: KnowledgeDB): v
               };
             }
             const result = await knowledgeDb.fetchAndIndex({
+              client,
               url: args.url,
               title: args.title,
             });

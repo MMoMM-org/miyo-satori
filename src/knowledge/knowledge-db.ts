@@ -61,6 +61,7 @@ export class KnowledgeDB extends SQLiteBase {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS chunks (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        client      TEXT    NOT NULL DEFAULT '',
         title       TEXT    NOT NULL DEFAULT '',
         heading     TEXT    NOT NULL DEFAULT '',
         content     TEXT    NOT NULL,
@@ -68,6 +69,8 @@ export class KnowledgeDB extends SQLiteBase {
         source_url  TEXT,
         indexed_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       );
+
+      CREATE INDEX IF NOT EXISTS idx_chunks_client ON chunks(client);
     `);
 
     // Porter FTS5 virtual table
@@ -112,8 +115,8 @@ export class KnowledgeDB extends SQLiteBase {
 
   protected prepareStatements(): void {
     this.stmtInsertChunk = this.db.prepare(
-      `INSERT INTO chunks (title, heading, content, type, source_url)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO chunks (client, title, heading, content, type, source_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     );
     this.stmtGetChunkById = this.db.prepare(
       `SELECT * FROM chunks WHERE id = ?`,
@@ -129,17 +132,18 @@ export class KnowledgeDB extends SQLiteBase {
    * never split across chunk boundaries. Returns the number of chunks stored.
    */
   index(opts: {
+    client: string;
     content: string;
     title?: string;
     type?: 'prose' | 'code';
     sourceUrl?: string;
   }): number {
-    const { content, title = '', type = 'prose', sourceUrl = null } = opts;
+    const { client, content, title = '', type = 'prose', sourceUrl = null } = opts;
     const chunks = splitIntoChunks(content);
 
     const insertMany = this.db.transaction((items: ChunkDraft[]) => {
       for (const item of items) {
-        this.stmtInsertChunk.run(title, item.heading, item.content, type, sourceUrl);
+        this.stmtInsertChunk.run(client, title, item.heading, item.content, type, sourceUrl);
       }
     });
 
@@ -152,12 +156,13 @@ export class KnowledgeDB extends SQLiteBase {
   // ---------------------------------------------------------------------------
 
   search(opts: {
+    client: string;
     query: string;
     contentType?: 'prose' | 'code';
     limit?: number;
     sessionId?: string;
   }): KbSearchResult[] | ThrottleBlock {
-    const { query, contentType, limit = 5, sessionId = 'default' } = opts;
+    const { client, query, contentType, limit = 5, sessionId = 'default' } = opts;
 
     // --- Throttle ---
     const entry = this.throttleMap.get(sessionId) ?? { count: 0 };
@@ -190,12 +195,13 @@ export class KnowledgeDB extends SQLiteBase {
     if (!safeQuery) return [];
 
     const typeFilter = contentType ? `AND c.type = '${contentType.replace(/'/g, "''")}'` : '';
+    const clientFilter = `AND c.client = '${client.replace(/'/g, "''")}'`;
 
     // Porter FTS search
     const porterResults = this.runFtsSearch(
       'chunks_fts',
       safeQuery,
-      typeFilter,
+      `${typeFilter} ${clientFilter}`,
       effectiveLimit * 3, // over-fetch for RRF
     );
 
@@ -206,7 +212,7 @@ export class KnowledgeDB extends SQLiteBase {
         trigramResults = this.runFtsSearch(
           'chunks_trigram',
           safeQuery,
-          typeFilter,
+          `${typeFilter} ${clientFilter}`,
           effectiveLimit * 3,
         );
       } catch {
@@ -224,7 +230,7 @@ export class KnowledgeDB extends SQLiteBase {
           const fuzzyResults = this.runFtsSearch(
             'chunks_fts',
             safeCorrection,
-            typeFilter,
+            `${typeFilter} ${clientFilter}`,
             effectiveLimit * 3,
           );
           combinedResults = fuzzyResults;
@@ -268,10 +274,11 @@ export class KnowledgeDB extends SQLiteBase {
   // ---------------------------------------------------------------------------
 
   async fetchAndIndex(opts: {
+    client: string;
     url: string;
     title?: string;
   }): Promise<{ indexed: number } | { error: string }> {
-    const { url, title } = opts;
+    const { client, url, title } = opts;
 
     // Follow redirects manually, capped at 5 (spec: max 5 redirects)
     const MAX_REDIRECTS = 5;
@@ -315,6 +322,7 @@ export class KnowledgeDB extends SQLiteBase {
     const cleaned = stripHtml(text);
 
     const indexed = this.index({
+      client,
       content: cleaned,
       title: title ?? url,
       sourceUrl: url,

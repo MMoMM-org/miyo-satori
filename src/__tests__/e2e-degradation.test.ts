@@ -76,6 +76,7 @@ function makeDisableDeps(registry: ServerRegistry): RouterDeps {
     builtinServer: {
       exec: vi.fn().mockResolvedValue({ content: 'ok' }),
     } as unknown as BuiltinServer,
+    client: 'test-client',
     getClient: vi.fn().mockReturnValue(null),
   } as RouterDeps;
 }

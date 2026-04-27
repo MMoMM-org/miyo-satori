@@ -11,17 +11,17 @@ async function main(): Promise<void> {
   if (!paths) {
     process.exit(0);
   }
-  const { dbPath } = paths;
+  const { dbPath, client } = paths;
 
   let sessionDb: SessionDB | null = null;
   try {
     sessionDb = new SessionDB(dbPath);
-    sessionDb.ensureSession(sessionId, repoRoot);
+    sessionDb.ensureSession(client, sessionId, repoRoot);
 
-    const resume = sessionDb.getResume(sessionId);
+    const resume = sessionDb.getResume(client, sessionId);
     if (resume && !resume.consumed) {
       process.stdout.write(resume.snapshot + '\n');
-      sessionDb.markResumeConsumed(sessionId);
+      sessionDb.markResumeConsumed(client, sessionId);
     }
   } catch (err) {
     process.stderr.write(`[satori:SessionStart] ${err}\n`);

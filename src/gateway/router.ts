@@ -16,6 +16,7 @@ export interface RouterDeps {
   auditLog: AuditLog;
   contentDb: ContentDB;
   builtinServer: BuiltinServer;
+  client: string;
   getClient: (serverName: string) => Client | null;
 }
 
@@ -60,6 +61,7 @@ export class GatewayRouter {
       const builtinResult = await this.deps.builtinServer.exec(server, tool, args);
       const outputStr = extractOutput(builtinResult.content);
       const captureId = this.deps.contentDb.insertCapture(
+        this.deps.client,
         sessionId ?? '',
         server,
         tool,
@@ -137,6 +139,7 @@ export class GatewayRouter {
     // Step 10: insert capture
     const outputStr = extractOutput(afterResponse.content);
     const captureId = this.deps.contentDb.insertCapture(
+      this.deps.client,
       sessionId ?? '',
       server,
       tool,

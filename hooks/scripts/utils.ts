@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { loadConfig } from '../../src/config/loader.js';
 import { resolveStorageDir, resolveFilePath } from '../../src/config/storage.js';
+import { resolveClient } from '../../src/config/client.js';
 
 export interface HookPayload {
   transcript_path?: string;
@@ -35,18 +36,22 @@ export function readStdinPayload(): HookPayload {
 }
 
 /**
- * Resolve hook DB paths via the same logic the MCP server uses.
- * Returns null if Satori is not configured for this repo (no satori.toml).
- * Hooks that get null should exit 0 silently.
+ * Resolve hook DB paths and client identifier via the same logic the MCP
+ * server uses. Returns null if Satori is not configured for this repo
+ * (no satori.toml). Hooks that get null should exit 0 silently.
  */
-export function resolveHookPaths(repoRoot: string): { dbPath: string; kbPath: string } | null {
+export function resolveHookPaths(
+  repoRoot: string,
+): { dbPath: string; kbPath: string; client: string } | null {
   if (!existsSync(join(repoRoot, 'satori.toml'))) {
     return null;
   }
   const config = loadConfig(repoRoot);
   const storageDir = resolveStorageDir({}, config, repoRoot);
+  const client = resolveClient({}, config, repoRoot);
   return {
     dbPath: resolveFilePath(storageDir, config.context?.db_path, 'db.sqlite'),
     kbPath: resolveFilePath(storageDir, config.context?.kb_path, 'kb.sqlite'),
+    client,
   };
 }

@@ -11,15 +11,15 @@ async function main(): Promise<void> {
   if (!paths) {
     process.exit(0);
   }
-  const { dbPath } = paths;
+  const { dbPath, client } = paths;
 
   let sessionDb: SessionDB | null = null;
   try {
     sessionDb = new SessionDB(dbPath);
-    sessionDb.ensureSession(sessionId, repoRoot);
+    sessionDb.ensureSession(client, sessionId, repoRoot);
 
-    const resume = sessionDb.getResume(sessionId);
-    const events = sessionDb.getEvents(sessionId);
+    const resume = sessionDb.getResume(client, sessionId);
+    const events = sessionDb.getEvents(client, sessionId);
 
     const hasContext = (resume !== null) || (events.length > 0);
     if (!hasContext) {

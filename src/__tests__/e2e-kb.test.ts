@@ -10,6 +10,8 @@ import { tmpdir } from 'os';
 import { KnowledgeDB } from '../knowledge/knowledge-db.js';
 import type { KbSearchResult, ThrottleBlock } from '../knowledge/knowledge-db.js';
 
+const C = 'test-client';
+
 const SAMPLE_DOC = `# Getting Started
 
 This section explains how to install the software.
@@ -50,20 +52,20 @@ describe('E2E: satori_kb integration', () => {
   });
 
   it('index markdown: chunks by heading', () => {
-    const chunkCount = kb.index({ title: 'test-doc', content: SAMPLE_DOC });
+    const chunkCount = kb.index({ client: C, title: 'test-doc', content: SAMPLE_DOC });
     expect(chunkCount).toBeGreaterThan(0);
   });
 
   it('search: returns results for indexed term', () => {
-    kb.index({ title: 'install-doc', content: SAMPLE_DOC });
-    const results = kb.search({ query: 'installation' });
+    kb.index({ client: C, title: 'install-doc', content: SAMPLE_DOC });
+    const results = kb.search({ client: C, query: 'installation' });
     expect(Array.isArray(results)).toBe(true);
     expect((results as KbSearchResult[]).length).toBeGreaterThan(0);
   });
 
   it('search: heading-weighted result ranks headings higher', () => {
-    kb.index({ title: 'heading-doc', content: SAMPLE_DOC });
-    const results = kb.search({ query: 'installation' });
+    kb.index({ client: C, title: 'heading-doc', content: SAMPLE_DOC });
+    const results = kb.search({ client: C, query: 'installation' });
     expect(Array.isArray(results)).toBe(true);
     const arr = results as KbSearchResult[];
     // Heading chunk should appear in results
@@ -76,8 +78,8 @@ describe('E2E: satori_kb integration', () => {
   });
 
   it('search: contentType filter returns only matching type', () => {
-    kb.index({ title: 'code-doc', content: SAMPLE_DOC });
-    const codeResults = kb.search({ query: 'npm install', contentType: 'code' });
+    kb.index({ client: C, title: 'code-doc', content: SAMPLE_DOC });
+    const codeResults = kb.search({ client: C, query: 'npm install', contentType: 'code' });
     expect(Array.isArray(codeResults)).toBe(true);
     // All results should be code chunks
     for (const r of codeResults as KbSearchResult[]) {
@@ -88,10 +90,10 @@ describe('E2E: satori_kb integration', () => {
   it('search: performance < 200ms for moderate corpus', () => {
     // Index several documents to build up a corpus
     for (let i = 0; i < 10; i++) {
-      kb.index({ title: `perf-doc-${i}`, content: SAMPLE_DOC });
+      kb.index({ client: C, title: `perf-doc-${i}`, content: SAMPLE_DOC });
     }
     const start = Date.now();
-    kb.search({ query: 'installation configure usage' });
+    kb.search({ client: C, query: 'installation configure usage' });
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(200);
   });
@@ -100,11 +102,11 @@ describe('E2E: satori_kb integration', () => {
     const sessionId = 'throttle-test-session';
     // Exhaust the throttle limit (default 8 free searches per session)
     for (let i = 0; i < 8; i++) {
-      const result = kb.search({ query: `query ${i}`, sessionId });
+      const result = kb.search({ client: C, query: `query ${i}`, sessionId });
       expect(Array.isArray(result)).toBe(true);
     }
     // 9th search should be throttled — returns ThrottleBlock
-    const throttled = kb.search({ query: 'final query', sessionId });
+    const throttled = kb.search({ client: C, query: 'final query', sessionId });
     expect(Array.isArray(throttled)).toBe(false);
     expect((throttled as ThrottleBlock).blocked).toBe(true);
   });
@@ -112,13 +114,13 @@ describe('E2E: satori_kb integration', () => {
   it('second index of same title adds new chunks (cumulative)', () => {
     const doc1 = '# Alpha\n\nAlpha section content about widgets';
     const doc2 = '# Beta\n\nBeta section content about gadgets';
-    kb.index({ title: 'cumulative-source', content: doc1 });
-    kb.index({ title: 'cumulative-source', content: doc2 });
+    kb.index({ client: C, title: 'cumulative-source', content: doc1 });
+    kb.index({ client: C, title: 'cumulative-source', content: doc2 });
     // Both indexed: searching for each term should find its content
-    const r1 = kb.search({ query: 'widgets' });
+    const r1 = kb.search({ client: C, query: 'widgets' });
     expect(Array.isArray(r1)).toBe(true);
     expect((r1 as KbSearchResult[]).some((r) => r.title === 'cumulative-source')).toBe(true);
-    const r2 = kb.search({ query: 'gadgets' });
+    const r2 = kb.search({ client: C, query: 'gadgets' });
     expect(Array.isArray(r2)).toBe(true);
     expect((r2 as KbSearchResult[]).some((r) => r.title === 'cumulative-source')).toBe(true);
   });

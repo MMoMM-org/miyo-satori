@@ -69,8 +69,10 @@ async function main() {
   // Storage location: CLI flag → toml setting → default repo-local
   const storageDir = resolveStorageDir({ storage: flags.storage }, config, repoRoot);
   // Client identifier: CLI flag → toml setting → basename(repoRoot)
-  // Plumbed into captures/events/resumes/chunks in phase 2.
-  void resolveClient({ client: flags.client }, config, repoRoot);
+  const client = resolveClient({ client: flags.client }, config, repoRoot);
+  // Default session-id for tool-calls: env-var (set by Claude Code) or synthetic
+  const defaultSessionId =
+    process.env.CLAUDE_SESSION_ID ?? `satori-pid-${process.pid}`;
 
   // Infrastructure
   const dbPath = resolveFilePath(storageDir, config.context?.db_path, 'db.sqlite');
@@ -86,7 +88,7 @@ async function main() {
     resolveFilePath(storageDir, config.context?.kb_path, 'kb.sqlite'),
   );
   const executor = new PolyglotExecutor();
-  const builtinServer = new BuiltinServer(executor, knowledgeDb);
+  const builtinServer = new BuiltinServer(executor, knowledgeDb, client);
 
   // Kairn backend warning
   if (config.context?.backend === 'kairn') {
@@ -127,16 +129,17 @@ async function main() {
     auditLog,
     contentDb,
     builtinServer,
+    client,
     getClient: (name) => lifecycle.getClient(name),
   });
 
   // Register all 6 tools
-  registerSatoriContext(server, sessionDb, contentDb);
+  registerSatoriContext(server, sessionDb, contentDb, client, defaultSessionId);
   registerSatoriManage(server, registry, repoRoot);
   registerSatoriFind(server, catalog, lifecycle);
   registerSatoriSchema(server, catalog);
   registerSatoriExec(server, router);
-  registerSatoriKb(server, knowledgeDb);
+  registerSatoriKb(server, knowledgeDb, client);
 
   // Connect
   const transport = new StdioServerTransport();

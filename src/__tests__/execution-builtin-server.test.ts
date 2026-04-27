@@ -18,7 +18,7 @@ let tmpDir: string;
 beforeEach(() => {
   executor = new PolyglotExecutor();
   knowledgeDb = new KnowledgeDB(':memory:');
-  server = new BuiltinServer(executor, knowledgeDb);
+  server = new BuiltinServer(executor, knowledgeDb, 'test-client');
   tmpDir = mkdtempSync(join(tmpdir(), 'builtin-server-test-'));
 });
 
@@ -115,7 +115,7 @@ describe('exec — run_file', () => {
     writeFileSync(scriptPath, '#!/bin/sh\necho "file-output"\n', { mode: 0o700 });
 
     const executor2 = new PolyglotExecutor({ projectRoot: tmpDir });
-    const server2 = new BuiltinServer(executor2, knowledgeDb);
+    const server2 = new BuiltinServer(executor2, knowledgeDb, 'test-client');
 
     const result = await server2.exec('bash', 'run_file', {
       path: scriptPath,
