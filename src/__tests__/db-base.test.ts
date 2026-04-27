@@ -30,6 +30,15 @@ describe('SQLiteBase', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it('sets busy_timeout so concurrent writers wait instead of failing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'satori-test-'));
+    const db = new TestDB(join(dir, 'test.sqlite'));
+    const result = db['db'].pragma('busy_timeout') as { timeout: number }[];
+    expect(result[0].timeout).toBeGreaterThanOrEqual(1000);
+    db.cleanup();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it('cleanup() removes DB file and WAL/SHM files', () => {
     const dir = mkdtempSync(join(tmpdir(), 'satori-test-'));
     const dbPath = join(dir, 'test.sqlite');
