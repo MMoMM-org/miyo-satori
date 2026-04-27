@@ -65,18 +65,48 @@ auto_register_mcp_json = true
 
 Context controls the session-guide database — the persistent store Satori uses to surface relevant project knowledge to Claude at the start of each session.
 
+### `storage_dir`
+
+| Type | Default |
+|---|---|
+| `string` | `"repo"` |
+
+Directory where Satori writes its three data files (`db.sqlite`, `kb.sqlite`, `scanner.log`). Resolves config-symmetric to the same g/p/r merge as the toml itself. Override per CLI with `--storage <value>` (or the alias `--project <name>`).
+
+| Value | Resolves to |
+|---|---|
+| `"repo"` | `<repoRoot>/satori/` (= the default) |
+| `"project"` | `<project_dir>/satori/` (uses `project_dir`; errors if not set) |
+| `"global"` | `~/.satori/data/` |
+| `"<bare-name>"` | `~/.satori/projects/<bare-name>/` (named project storage — share data across sibling repos) |
+| `"/abs/path"` or `"~/path"` | Used as-is, expanded |
+
+```toml
+# Share data across all repos that belong to the same logical project
+[context]
+storage_dir = "miyo"   # → ~/.satori/projects/miyo/
+```
+
 ### `db_path`
 
 | Type | Default |
 |---|---|
-| `string` (path) | `".satori/db.sqlite"` |
+| `string` (path) | `"db.sqlite"` (relative to `storage_dir`) |
 
-Path to the SQLite database file, relative to the repo root. Change this if you want to store the database outside the default `.satori/` directory, for example on a shared volume.
+Override for the SQLite database filename. Joined to `storage_dir` if relative, used as-is if absolute (`/abs/...` or `~/...`). Most users leave this unset.
 
 ```toml
 [context]
-db_path = ".satori/db.sqlite"
+db_path = "custom.sqlite"  # → <storage_dir>/custom.sqlite
 ```
+
+### `kb_path`
+
+| Type | Default |
+|---|---|
+| `string` (path) | `"kb.sqlite"` (relative to `storage_dir`) |
+
+Override for the knowledge-base SQLite filename. Same resolution rules as `db_path`. Useful when you want the KB on a different volume from the session DB.
 
 ### `session_guide_max_bytes`
 
@@ -163,9 +193,9 @@ When `true`, Satori scans tool responses returned by downstream servers before p
 
 | Type | Default |
 |---|---|
-| `string` (path) | `".satori/scanner.log"` |
+| `string` (path) | `"scanner.log"` (relative to `storage_dir`) |
 
-Path to the scanner audit log file, relative to the repo root. All scan events (`pass`, `warn`, `blocked`) are appended here in JSONL format. Set to an absolute path to share a single log across repos.
+Override for the scanner audit log filename. Joined to `storage_dir` if relative, used as-is if absolute. All scan events (`pass`, `warn`, `blocked`) are appended in JSONL format.
 
 ```toml
 [security]
@@ -280,7 +310,7 @@ The following `satori.toml` shows all sections together with representative valu
 auto_register_mcp_json = false
 
 [context]
-db_path = ".satori/db.sqlite"
+storage_dir = "repo"          # default; "<repoRoot>/satori/"
 session_guide_max_bytes = 2048
 retain_days = 30
 
@@ -291,7 +321,7 @@ npx_startup_timeout_ms = 30000
 startup_scan = true
 runtime_scan = true
 return_scan = false
-audit_log = ".satori/scanner.log"
+# audit_log left unset → defaults to "<storage_dir>/scanner.log"
 
 [[servers]]
 name = "filesystem"

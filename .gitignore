@@ -1,5 +1,6 @@
 dist/
 node_modules/
+satori/
 .satori/
 *.db
 *.db-wal
@@ -10,3 +11,5 @@ node_modules/
 /begin-code.sh
 .mcp.json
 /generated-images/
+_inbox/
+_outbox/
