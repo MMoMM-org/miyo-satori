@@ -22,20 +22,34 @@ captured tool output, check session statistics, or force-flush a new snapshot.
 | `sub_command` | `'restore' \| 'query' \| 'status' \| 'flush'` | Yes | Operation to perform |
 | `q` | `string` | No | Search query string (used by `query`) |
 | `limit` | `number` | No | Maximum results to return (used by `query`; default: 10) |
-| `session_id` | `string` | No | Session identifier (defaults to `"tool-session"`) |
+| `session_id` | `string` | No | Session identifier. When omitted, Satori uses the process-level default (resolved at startup from `--session-id` → `$CLAUDE_SESSION_ID` → synthetic `satori-pid-<pid>`). |
+
+> Every captured row, event, and resume is also tagged with the `client` of the running Satori process (resolved from `--client` → `[context] client` → `basename(repoRoot)`). All sub-commands below operate within that client's scope automatically — there is no cross-tenant access from the tool surface in this version. See [concepts.md — Tenant model](concepts.md#tenant-model-client-session_id) and [configuration.md — `client`](configuration.md#client) for details.
 
 ---
 
 ### `restore`
 
-Retrieves the latest saved snapshot for the session and marks it consumed.
-Returns the snapshot string, or `"No session snapshot available."` if none
-exists.
+Returns a session snapshot and marks it consumed. The lookup policy depends
+on whether `session_id` is given:
+
+| Caller | Behaviour |
+|---|---|
+| `session_id` **omitted** | Returns the **latest unconsumed resume for this client across all sessions**. Solves fresh-start blindness — a new `claude` invocation in a repo gets the previous session's resume back even though the new UUID has no captures yet. |
+| `session_id` **provided** | Returns that specific session's resume **within this client only**. Cross-tenant lookups return `"No session snapshot available."` (in this version a hard refusal is not raised — see Phase 4 in `docs/specs/client-session-model.md`). |
+
+If no resume matches, the response is `"No session snapshot available."`.
+
+```json
+{
+  "sub_command": "restore"
+}
+```
 
 ```json
 {
   "sub_command": "restore",
-  "session_id": "my-session"
+  "session_id": "8c3d…-uuid"
 }
 ```
 

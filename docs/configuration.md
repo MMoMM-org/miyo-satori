@@ -127,12 +127,67 @@ session_guide_max_bytes = 4096
 |---|---|
 | `number` | `30` |
 
-Number of days to keep session captures before they are pruned from the database. Older entries are removed automatically on startup. Set to a higher value for longer project memory, or lower to keep the database small.
+Number of days to keep session captures before they are pruned from the database. Older entries are removed automatically on startup. Pruning is **client-scoped** — a process running with `client = "alpha"` only deletes its own rows, even when `storage_dir` is shared across multiple clients. Set higher for longer project memory, lower to keep the database small.
 
 ```toml
 [context]
 retain_days = 90
 ```
+
+### `client`
+
+| Type | Default |
+|---|---|
+| `string` | `basename(repoRoot)` |
+
+Tenant identifier for everything Satori writes — captures, events, resumes, KB chunks. With shared `storage_dir`, this is what keeps two repos' data isolated in the same SQLite file. See [concepts.md — Tenant model](concepts.md#tenant-model-client-session_id) for the full picture.
+
+**Resolution order (highest first):**
+
+1. CLI flag `--client <name>` (in the MCP server `args`)
+2. `[context] client` in `satori.toml`
+3. Auto-derived from `basename(repoRoot)`
+
+The resolved value is validated against `^[A-Za-z0-9_-]{1,64}$` and trimmed. Empty, whitespace-only, or non-matching values cause Satori to **fail at startup** rather than silently fall through — this surfaces misconfiguration immediately.
+
+Override only when:
+
+- Two repos collide on basename (e.g. both checked out as `service`).
+- You want a stable client name independent of the working directory (e.g. `--client personal`).
+- The repo basename contains characters outside the allowlist (spaces, non-ASCII).
+
+```toml
+[context]
+client = "personal"
+```
+
+Or per CLI in the MCP config:
+
+```json
+{
+  "mcpServers": {
+    "satori": {
+      "command": "node",
+      "args": ["/abs/path/dist/src/index.js", "--client", "personal"]
+    }
+  }
+}
+```
+
+---
+
+## CLI flags
+
+In addition to the `satori.toml` settings above, Satori accepts a small set of CLI flags in its MCP `args`:
+
+| Flag | Purpose | Resolution order |
+|---|---|---|
+| `--root <path>` | Override the repo root (used to find `satori.toml` and to auto-derive `client`). | flag → `process.cwd()` |
+| `--storage <value>` (alias `--project <name>`) | Override `[context] storage_dir`. | flag → toml → `"repo"` |
+| `--client <name>` | Override `[context] client`. See above. | flag → toml → `basename(repoRoot)` |
+| `--session-id <uuid>` | Default `session_id` for tool-call captures when the caller doesn't pass one. | flag → `$CLAUDE_SESSION_ID` env-var → synthetic `satori-pid-<pid>` |
+
+Synthetic session ids change per process, so cross-restart capture lookups fail silently. When neither `--session-id` nor `$CLAUDE_SESSION_ID` is set, Satori writes a warning to stderr at startup so the operator knows. Pass `--session-id "${CLAUDE_SESSION_ID}"` (or whatever stable id Claude Code exposes) for production setups.
 
 ---
 
