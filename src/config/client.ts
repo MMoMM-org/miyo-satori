@@ -6,6 +6,23 @@ export interface ClientOverrides {
   client?: string;
 }
 
+const CLIENT_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+function validate(value: string, source: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(
+      `Client identifier from ${source} is blank — set --client or [context] client to a non-empty value`,
+    );
+  }
+  if (!CLIENT_PATTERN.test(trimmed)) {
+    throw new Error(
+      `Client identifier from ${source} is invalid: ${JSON.stringify(value)} — must match ${CLIENT_PATTERN.source}`,
+    );
+  }
+  return trimmed;
+}
+
 /**
  * Resolve the client identifier for this Satori process.
  *
@@ -18,21 +35,20 @@ export interface ClientOverrides {
  * cross-session lookups within the same working scope return the
  * right rows even when storage is shared across repos.
  *
- * Throws if no value can be resolved (only happens when repoRoot is "/").
+ * Throws if the resolved value is blank or contains characters outside
+ * [A-Za-z0-9_-]. Forces explicit override when basename(repoRoot) is
+ * non-ASCII or otherwise unsuitable as an identifier.
  */
 export function resolveClient(
   overrides: ClientOverrides,
   config: SatoriConfig,
   repoRoot: string,
 ): string {
-  if (overrides.client) return overrides.client;
-  if (config.context?.client) return config.context.client;
-
-  const auto = basename(repoRoot);
-  if (!auto) {
-    throw new Error(
-      'Cannot auto-derive client from repoRoot — set --client or [context] client explicitly',
-    );
+  if (overrides.client !== undefined) {
+    return validate(overrides.client, 'CLI flag --client');
   }
-  return auto;
+  if (config.context?.client !== undefined) {
+    return validate(config.context.client, '[context] client in satori.toml');
+  }
+  return validate(basename(repoRoot), 'basename(repoRoot) — set --client or [context] client to override');
 }

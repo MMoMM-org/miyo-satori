@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import type Database from 'better-sqlite3';
 import { SQLiteBase } from '../db-base.js';
 
 export interface SessionEvent {
@@ -45,6 +46,15 @@ function computeHash(type: string, data: string): string {
 }
 
 export class SessionDB extends SQLiteBase {
+  // Cached prepared statements for the hot insertEvent path. See knowledge-db.ts
+  // for the `declare` rationale (avoids ES2022 class-field reordering).
+  declare private stmtRecentEvents: Database.Statement<unknown[]>;
+  declare private stmtCountEvents: Database.Statement<unknown[]>;
+  declare private stmtEvictionTarget: Database.Statement<unknown[]>;
+  declare private stmtDeleteEvent: Database.Statement<unknown[]>;
+  declare private stmtInsertEvent: Database.Statement<unknown[]>;
+  declare private stmtTouchMeta: Database.Statement<unknown[]>;
+
   protected initSchema(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session_events (
@@ -89,8 +99,34 @@ export class SessionDB extends SQLiteBase {
   }
 
   protected prepareStatements(): void {
-    // Statements are built inline per method for clarity and correctness.
-    // better-sqlite3 statement preparation is fast; no caching needed for this volume.
+    // Cache statements used on every hook invocation (insertEvent's hot path)
+    // so the prepare() cost is paid once, not three times per call.
+    this.stmtRecentEvents = this.db.prepare(
+      `SELECT type, data_hash FROM session_events
+       WHERE client = ? AND session_id = ?
+       ORDER BY id DESC LIMIT 5`,
+    );
+    this.stmtCountEvents = this.db.prepare(
+      'SELECT COUNT(*) as cnt FROM session_events WHERE client = ? AND session_id = ?',
+    );
+    this.stmtEvictionTarget = this.db.prepare(
+      `SELECT id FROM session_events
+       WHERE client = ? AND session_id = ?
+       ORDER BY priority DESC, id ASC
+       LIMIT 1`,
+    );
+    this.stmtDeleteEvent = this.db.prepare('DELETE FROM session_events WHERE id = ?');
+    this.stmtInsertEvent = this.db.prepare(
+      `INSERT INTO session_events
+         (client, session_id, type, category, priority, data, source_hook, data_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    this.stmtTouchMeta = this.db.prepare(
+      `UPDATE session_meta
+       SET event_count = event_count + 1,
+           last_event_at = datetime('now')
+       WHERE client = ? AND session_id = ?`,
+    );
   }
 
   insertEvent(
@@ -106,13 +142,10 @@ export class SessionDB extends SQLiteBase {
 
     const insert = this.db.transaction(() => {
       // Dedup: check last 5 events (by id) for same type+data_hash
-      const recent = this.db
-        .prepare(
-          `SELECT type, data_hash FROM session_events
-           WHERE client = ? AND session_id = ?
-           ORDER BY id DESC LIMIT 5`,
-        )
-        .all(client, sessionId) as { type: string; data_hash: string }[];
+      const recent = this.stmtRecentEvents.all(client, sessionId) as {
+        type: string;
+        data_hash: string;
+      }[];
 
       const isDuplicate = recent.some(
         (row) => row.type === type && row.data_hash === dataHash,
@@ -120,47 +153,32 @@ export class SessionDB extends SQLiteBase {
       if (isDuplicate) return;
 
       // Eviction: if at 1000+, remove lowest-priority (then oldest) event
-      const count = (
-        this.db
-          .prepare('SELECT COUNT(*) as cnt FROM session_events WHERE client = ? AND session_id = ?')
-          .get(client, sessionId) as { cnt: number }
-      ).cnt;
+      const count = (this.stmtCountEvents.get(client, sessionId) as { cnt: number }).cnt;
 
       if (count >= 1000) {
-        const toEvict = this.db
-          .prepare(
-            `SELECT id FROM session_events
-             WHERE client = ? AND session_id = ?
-             ORDER BY priority DESC, id ASC
-             LIMIT 1`,
-          )
-          .get(client, sessionId) as { id: number } | undefined;
+        const toEvict = this.stmtEvictionTarget.get(client, sessionId) as
+          | { id: number }
+          | undefined;
 
         if (toEvict) {
-          this.db
-            .prepare('DELETE FROM session_events WHERE id = ?')
-            .run(toEvict.id);
+          this.stmtDeleteEvent.run(toEvict.id);
         }
       }
 
       // Insert event
-      this.db
-        .prepare(
-          `INSERT INTO session_events
-             (client, session_id, type, category, priority, data, source_hook, data_hash)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(client, sessionId, type, category, priority, data, sourceHook, dataHash);
+      this.stmtInsertEvent.run(
+        client,
+        sessionId,
+        type,
+        category,
+        priority,
+        data,
+        sourceHook,
+        dataHash,
+      );
 
       // Update session_meta
-      this.db
-        .prepare(
-          `UPDATE session_meta
-           SET event_count = event_count + 1,
-               last_event_at = datetime('now')
-           WHERE client = ? AND session_id = ?`,
-        )
-        .run(client, sessionId);
+      this.stmtTouchMeta.run(client, sessionId);
     });
 
     insert();
@@ -249,23 +267,23 @@ export class SessionDB extends SQLiteBase {
       .run(client, sessionId);
   }
 
-  getSessionStats(): SessionStats {
+  getSessionStats(client: string): SessionStats {
     const sessionCount = (
       this.db
-        .prepare('SELECT COUNT(*) as cnt FROM session_meta')
-        .get() as { cnt: number }
+        .prepare('SELECT COUNT(*) as cnt FROM session_meta WHERE client = ?')
+        .get(client) as { cnt: number }
     ).cnt;
 
     const eventCount = (
       this.db
-        .prepare('SELECT COUNT(*) as cnt FROM session_events')
-        .get() as { cnt: number }
+        .prepare('SELECT COUNT(*) as cnt FROM session_events WHERE client = ?')
+        .get(client) as { cnt: number }
     ).cnt;
 
     const resumeCount = (
       this.db
-        .prepare('SELECT COUNT(*) as cnt FROM session_resume')
-        .get() as { cnt: number }
+        .prepare('SELECT COUNT(*) as cnt FROM session_resume WHERE client = ?')
+        .get(client) as { cnt: number }
     ).cnt;
 
     return {

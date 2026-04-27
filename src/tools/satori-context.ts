@@ -74,7 +74,7 @@ function handleSubCommand(
     }
 
     case 'status': {
-      const stats = sessionDb.getSessionStats();
+      const stats = sessionDb.getSessionStats(client);
       const captureCount = contentDb.getBySession(client, sessionId).length;
       const status = {
         sessions: stats.session_count,

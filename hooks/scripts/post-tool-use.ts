@@ -44,10 +44,13 @@ async function main(): Promise<void> {
     }
 
     if (CAPTURE_TOOLS.has(toolName) && toolOutput != null) {
+      // server='hook' marks captures that came from the PostToolUse hook
+      // rather than from a downstream MCP server dispatched by the gateway.
+      // The client column already records which Claude application produced it.
       contentDb.insertCapture(
         client,
         sessionId,
-        'claude-code',
+        'hook',
         toolName,
         JSON.stringify(toolInput),
         String(toolOutput).slice(0, 10000),

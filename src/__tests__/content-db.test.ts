@@ -90,7 +90,7 @@ describe('ContentDB', () => {
 
     expect(db.getBySession(C, 's1')).toHaveLength(2);
 
-    const removed = db.pruneOlderThan(30);
+    const removed = db.pruneOlderThan(C, 30);
     expect(removed).toBe(1);
     const remaining = db.getBySession(C, 's1');
     expect(remaining).toHaveLength(1);
@@ -99,8 +99,29 @@ describe('ContentDB', () => {
 
   it('pruneOlderThan returns 0 when nothing to prune', () => {
     db.insertCapture(C, 's1', 'server', 'tool', null, 'recent content');
-    const removed = db.pruneOlderThan(30);
+    const removed = db.pruneOlderThan(C, 30);
     expect(removed).toBe(0);
+  });
+
+  it('pruneOlderThan is client-scoped — does not delete other tenants rows', () => {
+    const old = Math.floor(Date.now() / 1000) - 40 * 86400;
+    db['db']
+      .prepare(
+        `INSERT INTO captures (client, session_id, server, tool, output_text, captured_at)
+         VALUES (?, 's1', 'srv', 'tool', 'old-a', ?)`,
+      )
+      .run('client-a', old);
+    db['db']
+      .prepare(
+        `INSERT INTO captures (client, session_id, server, tool, output_text, captured_at)
+         VALUES (?, 's1', 'srv', 'tool', 'old-b', ?)`,
+      )
+      .run('client-b', old);
+
+    const removedA = db.pruneOlderThan('client-a', 30);
+    expect(removedA).toBe(1);
+    expect(db.getBySession('client-a', 's1')).toHaveLength(0);
+    expect(db.getBySession('client-b', 's1')).toHaveLength(1);
   });
 
   it('search respects limit parameter', () => {

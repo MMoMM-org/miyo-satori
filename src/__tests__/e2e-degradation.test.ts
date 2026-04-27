@@ -77,6 +77,7 @@ function makeDisableDeps(registry: ServerRegistry): RouterDeps {
       exec: vi.fn().mockResolvedValue({ content: 'ok' }),
     } as unknown as BuiltinServer,
     client: 'test-client',
+    defaultSessionId: 'test-default-session',
     getClient: vi.fn().mockReturnValue(null),
   } as RouterDeps;
 }

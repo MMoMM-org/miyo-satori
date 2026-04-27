@@ -58,6 +58,7 @@ describe('E2E: BuiltinRuntime via GatewayRouter', () => {
       contentDb,
       builtinServer,
       client: C,
+      defaultSessionId: 'e2e-session',
       getClient: () => null,
     });
   });

@@ -112,17 +112,57 @@ describe('SessionDB', () => {
     expect(meta.compact_count).toBe(2);
   });
 
-  it('getSessionStats returns numeric counts', () => {
+  it('getSessionStats returns numeric counts for the requested client', () => {
     db.insertEvent(C, 's1', 'file_read', 'file', 1, '/a.ts', 'hook');
     db.upsertResume(C, 's1', '<xml />', 1);
 
-    const stats = db.getSessionStats();
+    const stats = db.getSessionStats(C);
     expect(typeof stats.session_count).toBe('number');
     expect(typeof stats.event_count).toBe('number');
     expect(typeof stats.resume_count).toBe('number');
     expect(stats.session_count).toBeGreaterThanOrEqual(1);
     expect(stats.event_count).toBeGreaterThanOrEqual(1);
     expect(stats.resume_count).toBeGreaterThanOrEqual(1);
+  });
+
+  it('getSessionStats is client-scoped — does not bleed across clients', () => {
+    db.ensureSession('client-a', 'sa', '/a');
+    db.ensureSession('client-b', 'sb', '/b');
+    db.insertEvent('client-a', 'sa', 'file_read', 'file', 1, '/a.ts', 'hook');
+    db.insertEvent('client-a', 'sa', 'file_edit', 'file', 1, '/b.ts', 'hook');
+    db.insertEvent('client-b', 'sb', 'file_read', 'file', 1, '/x.ts', 'hook');
+    db.upsertResume('client-a', 'sa', '<a />', 1);
+    db.upsertResume('client-b', 'sb', '<b />', 1);
+
+    const a = db.getSessionStats('client-a');
+    const b = db.getSessionStats('client-b');
+    expect(a.event_count).toBe(2);
+    expect(b.event_count).toBe(1);
+    expect(a.resume_count).toBe(1);
+    expect(b.resume_count).toBe(1);
+    expect(db.getSessionStats('client-c').event_count).toBe(0);
+  });
+
+  it('getEvents is client-scoped — same session_id under different clients does not bleed', () => {
+    db.ensureSession('client-a', 'shared-id', '/a');
+    db.ensureSession('client-b', 'shared-id', '/b');
+    db.insertEvent('client-a', 'shared-id', 'file_read', 'file', 1, '/a.ts', 'hook');
+    db.insertEvent('client-b', 'shared-id', 'file_read', 'file', 1, '/b.ts', 'hook');
+
+    const a = db.getEvents('client-a', 'shared-id');
+    const b = db.getEvents('client-b', 'shared-id');
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+    expect(a[0].data).toBe('/a.ts');
+    expect(b[0].data).toBe('/b.ts');
+  });
+
+  it('getResume is client-scoped — same session_id under different clients does not bleed', () => {
+    db.upsertResume('client-a', 'shared-id', '<a />', 1);
+    db.upsertResume('client-b', 'shared-id', '<b />', 1);
+
+    expect(db.getResume('client-a', 'shared-id')!.snapshot).toBe('<a />');
+    expect(db.getResume('client-b', 'shared-id')!.snapshot).toBe('<b />');
   });
 
   it('getEvents returns empty array for unknown session', () => {

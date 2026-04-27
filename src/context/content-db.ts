@@ -70,32 +70,34 @@ export class ContentDB extends SQLiteBase {
   }
 
   updateSummary(id: number, summary: string): void {
-    // Fetch current row values for FTS rebuild
-    const row = this.db
-      .prepare('SELECT server, tool, output_text FROM captures WHERE id = ?')
-      .get(id) as { server: string; tool: string; output_text: string } | undefined;
+    // Wrap the SELECT + UPDATE + FTS rebuild in a single transaction so a
+    // concurrent writer cannot interleave between FTS-delete and FTS-insert.
+    const update = this.db.transaction(() => {
+      const row = this.db
+        .prepare('SELECT server, tool, output_text FROM captures WHERE id = ?')
+        .get(id) as { server: string; tool: string; output_text: string } | undefined;
 
-    if (!row) return;
+      if (!row) return;
 
-    // Update the main table
-    this.db
-      .prepare('UPDATE captures SET summary = ? WHERE id = ?')
-      .run(summary, id);
+      this.db
+        .prepare('UPDATE captures SET summary = ? WHERE id = ?')
+        .run(summary, id);
 
-    // Rebuild FTS for this row: delete then re-insert
-    this.db
-      .prepare(
-        `INSERT INTO captures_fts(captures_fts, rowid, server, tool, output_text, summary)
-         VALUES ('delete', ?, ?, ?, ?, ?)`,
-      )
-      .run(id, row.server, row.tool, row.output_text, '');
+      this.db
+        .prepare(
+          `INSERT INTO captures_fts(captures_fts, rowid, server, tool, output_text, summary)
+           VALUES ('delete', ?, ?, ?, ?, ?)`,
+        )
+        .run(id, row.server, row.tool, row.output_text, '');
 
-    this.db
-      .prepare(
-        `INSERT INTO captures_fts(rowid, server, tool, output_text, summary)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(id, row.server, row.tool, row.output_text, summary);
+      this.db
+        .prepare(
+          `INSERT INTO captures_fts(rowid, server, tool, output_text, summary)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(id, row.server, row.tool, row.output_text, summary);
+    });
+    update();
   }
 
   search(client: string, q: string, limit = 10): SearchResult[] {
@@ -119,11 +121,11 @@ export class ContentDB extends SQLiteBase {
       .all(client, sessionId) as Capture[];
   }
 
-  pruneOlderThan(days: number): number {
+  pruneOlderThan(client: string, days: number): number {
     const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
     const result = this.db
-      .prepare('DELETE FROM captures WHERE captured_at < ?')
-      .run(cutoff);
+      .prepare('DELETE FROM captures WHERE client = ? AND captured_at < ?')
+      .run(client, cutoff);
     return result.changes;
   }
 }

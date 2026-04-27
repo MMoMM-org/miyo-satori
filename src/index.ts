@@ -38,6 +38,7 @@ interface ParsedFlags {
   root?: string;
   storage?: string;
   client?: string;
+  sessionId?: string;
 }
 
 function parseFlags(argv: string[]): ParsedFlags {
@@ -49,6 +50,8 @@ function parseFlags(argv: string[]): ParsedFlags {
       out.storage = argv[++i];
     } else if (argv[i] === '--client' && i + 1 < argv.length) {
       out.client = argv[++i];
+    } else if (argv[i] === '--session-id' && i + 1 < argv.length) {
+      out.sessionId = argv[++i];
     }
   }
   return out;
@@ -70,15 +73,27 @@ async function main() {
   const storageDir = resolveStorageDir({ storage: flags.storage }, config, repoRoot);
   // Client identifier: CLI flag → toml setting → basename(repoRoot)
   const client = resolveClient({ client: flags.client }, config, repoRoot);
-  // Default session-id for tool-calls: env-var (set by Claude Code) or synthetic
-  const defaultSessionId =
-    process.env.CLAUDE_SESSION_ID ?? `satori-pid-${process.pid}`;
+  // Default session-id for tool-calls: --session-id flag → env-var → synthetic.
+  // Synthetic IDs change per process, so cross-restart capture lookups break;
+  // surface this with a warning so operators can wire up the real session id.
+  let defaultSessionId: string;
+  if (flags.sessionId) {
+    defaultSessionId = flags.sessionId;
+  } else if (process.env.CLAUDE_SESSION_ID) {
+    defaultSessionId = process.env.CLAUDE_SESSION_ID;
+  } else {
+    defaultSessionId = `satori-pid-${process.pid}`;
+    process.stderr.write(
+      '[satori] warning: no --session-id and no $CLAUDE_SESSION_ID — using synthetic session id ' +
+        `"${defaultSessionId}". Captures from prior restarts will not be visible.\n`,
+    );
+  }
 
   // Infrastructure
   const dbPath = resolveFilePath(storageDir, config.context?.db_path, 'db.sqlite');
   const sessionDb = new SessionDB(dbPath);
   const contentDb = new ContentDB(dbPath);
-  contentDb.pruneOlderThan(config.context?.retain_days ?? 30);
+  contentDb.pruneOlderThan(client, config.context?.retain_days ?? 30);
   const auditLog = new AuditLog(
     resolveFilePath(storageDir, config.security?.audit_log, 'scanner.log'),
   );
@@ -130,6 +145,7 @@ async function main() {
     contentDb,
     builtinServer,
     client,
+    defaultSessionId,
     getClient: (name) => lifecycle.getClient(name),
   });
 

@@ -7,7 +7,7 @@ import { buildResumeSnapshot } from '../context/snapshot.js';
 // The registerSatoriContext function wires these same operations.
 
 type SubCommand = 'restore' | 'query' | 'status' | 'flush';
-const TOOL_SESSION = 'tool-session';
+const DEFAULT_SESSION = 'test-session';
 const C = 'test-client';
 
 function dispatch(
@@ -15,7 +15,7 @@ function dispatch(
   sessionDb: SessionDB,
   contentDb: ContentDB,
 ): string {
-  const sessionId = args.session_id ?? TOOL_SESSION;
+  const sessionId = args.session_id ?? DEFAULT_SESSION;
   const explicitSession = args.session_id !== undefined;
 
   switch (args.sub_command) {
@@ -34,7 +34,7 @@ function dispatch(
       return JSON.stringify(results);
     }
     case 'status': {
-      const stats = sessionDb.getSessionStats();
+      const stats = sessionDb.getSessionStats(C);
       const captureCount = contentDb.getBySession(C, sessionId).length;
       return JSON.stringify({
         sessions: stats.session_count,
@@ -59,7 +59,7 @@ describe('satori_context sub-commands', () => {
   beforeEach(() => {
     sessionDb = new SessionDB(':memory:');
     contentDb = new ContentDB(':memory:');
-    sessionDb.ensureSession(C, TOOL_SESSION, '/project');
+    sessionDb.ensureSession(C, DEFAULT_SESSION, '/project');
   });
 
   afterEach(() => {
@@ -73,8 +73,8 @@ describe('satori_context sub-commands', () => {
   });
 
   it('flush -> generates snapshot -> restore returns it', () => {
-    sessionDb.insertEvent(C, TOOL_SESSION, 'file_read', 'file', 1, '/src/index.ts', 'test');
-    sessionDb.insertEvent(C, TOOL_SESSION, 'file_edit', 'file', 1, '/src/app.ts', 'test');
+    sessionDb.insertEvent(C, DEFAULT_SESSION, 'file_read', 'file', 1, '/src/index.ts', 'test');
+    sessionDb.insertEvent(C, DEFAULT_SESSION, 'file_edit', 'file', 1, '/src/app.ts', 'test');
 
     const flushResult = dispatch({ sub_command: 'flush' }, sessionDb, contentDb);
     expect(flushResult).toMatch(/^Snapshot generated: \d+ bytes$/);
@@ -85,7 +85,7 @@ describe('satori_context sub-commands', () => {
   });
 
   it('restore marks snapshot as consumed -> second restore returns no snapshot', () => {
-    sessionDb.upsertResume(C, TOOL_SESSION, '<session_resume />', 0);
+    sessionDb.upsertResume(C, DEFAULT_SESSION, '<session_resume />', 0);
     const first = dispatch({ sub_command: 'restore' }, sessionDb, contentDb);
     expect(first).toBe('<session_resume />');
 
@@ -101,7 +101,7 @@ describe('satori_context sub-commands', () => {
   });
 
   it('query with matching data -> returns results', () => {
-    contentDb.insertCapture(C, TOOL_SESSION, 'filesystem', 'read_file', null, 'satori-unique-search-term content');
+    contentDb.insertCapture(C, DEFAULT_SESSION, 'filesystem', 'read_file', null, 'satori-unique-search-term content');
 
     const result = dispatch({ sub_command: 'query', q: 'satori-unique-search-term' }, sessionDb, contentDb);
     const parsed = JSON.parse(result) as Array<{ server: string; tool: string }>;
@@ -111,7 +111,7 @@ describe('satori_context sub-commands', () => {
   });
 
   it('query with no match -> returns empty array', () => {
-    contentDb.insertCapture(C, TOOL_SESSION, 'github', 'list_issues', null, 'some other content');
+    contentDb.insertCapture(C, DEFAULT_SESSION, 'github', 'list_issues', null, 'some other content');
     const result = dispatch({ sub_command: 'query', q: 'nonexistent-xyz-999' }, sessionDb, contentDb);
     const parsed = JSON.parse(result) as unknown[];
     expect(parsed).toHaveLength(0);
@@ -124,9 +124,9 @@ describe('satori_context sub-commands', () => {
   });
 
   it('status -> returns JSON with numeric counts', () => {
-    sessionDb.insertEvent(C, TOOL_SESSION, 'file_read', 'file', 1, '/x.ts', 'test');
-    contentDb.insertCapture(C, TOOL_SESSION, 'server', 'tool', null, 'output');
-    sessionDb.upsertResume(C, TOOL_SESSION, '<xml />', 1);
+    sessionDb.insertEvent(C, DEFAULT_SESSION, 'file_read', 'file', 1, '/x.ts', 'test');
+    contentDb.insertCapture(C, DEFAULT_SESSION, 'server', 'tool', null, 'output');
+    sessionDb.upsertResume(C, DEFAULT_SESSION, '<xml />', 1);
 
     const result = dispatch({ sub_command: 'status' }, sessionDb, contentDb);
     const stats = JSON.parse(result) as {
@@ -169,5 +169,38 @@ describe('satori_context sub-commands', () => {
   it('registerSatoriContext is exported from the tool module', async () => {
     const mod = await import('../tools/satori-context.js');
     expect(typeof mod.registerSatoriContext).toBe('function');
+  });
+
+  // -- cross-client isolation (R9 / R27) --
+
+  it('status sub-command counts only the requested client', () => {
+    sessionDb.ensureSession('other-client', 'other-session', '/other');
+    sessionDb.insertEvent('other-client', 'other-session', 'file_read', 'file', 1, '/x.ts', 'hook');
+    sessionDb.upsertResume('other-client', 'other-session', '<other />', 1);
+    contentDb.insertCapture('other-client', 'other-session', 'srv', 'tool', null, 'other-output');
+
+    sessionDb.insertEvent(C, DEFAULT_SESSION, 'file_read', 'file', 1, '/y.ts', 'hook');
+    contentDb.insertCapture(C, DEFAULT_SESSION, 'srv', 'tool', null, 'my-output');
+
+    const result = dispatch({ sub_command: 'status' }, sessionDb, contentDb);
+    const stats = JSON.parse(result) as { events: number; resumes: number; captures: number };
+    expect(stats.events).toBe(1);
+    expect(stats.resumes).toBe(0);
+    expect(stats.captures).toBe(1);
+  });
+
+  it('query sub-command does not return captures from other clients', () => {
+    contentDb.insertCapture('other-client', 'other-session', 'srv', 'tool', null, 'shared-marker text');
+    contentDb.insertCapture(C, DEFAULT_SESSION, 'srv', 'tool', null, 'shared-marker text');
+
+    const result = dispatch({ sub_command: 'query', q: 'shared-marker' }, sessionDb, contentDb);
+    const parsed = JSON.parse(result) as unknown[];
+    expect(parsed).toHaveLength(1);
+  });
+
+  it('restore does not return another client\'s resume', () => {
+    sessionDb.upsertResume('other-client', 'other-session', '<other-snapshot />', 1);
+    const result = dispatch({ sub_command: 'restore' }, sessionDb, contentDb);
+    expect(result).toBe('No session snapshot available.');
   });
 });

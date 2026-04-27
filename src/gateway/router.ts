@@ -17,6 +17,7 @@ export interface RouterDeps {
   contentDb: ContentDB;
   builtinServer: BuiltinServer;
   client: string;
+  defaultSessionId: string;
   getClient: (serverName: string) => Client | null;
 }
 
@@ -62,7 +63,7 @@ export class GatewayRouter {
       const outputStr = extractOutput(builtinResult.content);
       const captureId = this.deps.contentDb.insertCapture(
         this.deps.client,
-        sessionId ?? '',
+        sessionId ?? this.deps.defaultSessionId,
         server,
         tool,
         JSON.stringify(args),

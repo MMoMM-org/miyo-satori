@@ -58,6 +58,9 @@ export class KnowledgeDB extends SQLiteBase {
     this.throttleMap = new Map();
     this.trigramAvailable = true;
     // Core table
+    // No client index: all lookups go through FTS+JOIN on rowid (PK) or via
+    // stmtGetChunkById on the PK. A standalone client index would be unused
+    // and add write overhead.
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS chunks (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -69,8 +72,6 @@ export class KnowledgeDB extends SQLiteBase {
         source_url  TEXT,
         indexed_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
       );
-
-      CREATE INDEX IF NOT EXISTS idx_chunks_client ON chunks(client);
     `);
 
     // Porter FTS5 virtual table
@@ -194,14 +195,12 @@ export class KnowledgeDB extends SQLiteBase {
     const safeQuery = sanitizeFtsQuery(query);
     if (!safeQuery) return [];
 
-    const typeFilter = contentType ? `AND c.type = '${contentType.replace(/'/g, "''")}'` : '';
-    const clientFilter = `AND c.client = '${client.replace(/'/g, "''")}'`;
-
     // Porter FTS search
     const porterResults = this.runFtsSearch(
       'chunks_fts',
       safeQuery,
-      `${typeFilter} ${clientFilter}`,
+      client,
+      contentType,
       effectiveLimit * 3, // over-fetch for RRF
     );
 
@@ -212,7 +211,8 @@ export class KnowledgeDB extends SQLiteBase {
         trigramResults = this.runFtsSearch(
           'chunks_trigram',
           safeQuery,
-          `${typeFilter} ${clientFilter}`,
+          client,
+          contentType,
           effectiveLimit * 3,
         );
       } catch {
@@ -223,14 +223,15 @@ export class KnowledgeDB extends SQLiteBase {
     // If no results and query has words, try simple fuzzy correction
     let combinedResults: RawFtsRow[];
     if (porterResults.length === 0 && trigramResults.length === 0) {
-      const corrected = this.tryFuzzyCorrect(query);
+      const corrected = this.tryFuzzyCorrect(client, query);
       if (corrected && corrected !== safeQuery) {
         const safeCorrection = sanitizeFtsQuery(corrected);
         if (safeCorrection) {
           const fuzzyResults = this.runFtsSearch(
             'chunks_fts',
             safeCorrection,
-            `${typeFilter} ${clientFilter}`,
+            client,
+            contentType,
             effectiveLimit * 3,
           );
           combinedResults = fuzzyResults;
@@ -336,54 +337,68 @@ export class KnowledgeDB extends SQLiteBase {
   // ---------------------------------------------------------------------------
 
   private runFtsSearch(
-    table: string,
+    table: 'chunks_fts' | 'chunks_trigram',
     ftsQuery: string,
-    typeFilter: string,
+    client: string,
+    contentType: 'prose' | 'code' | undefined,
     limit: number,
   ): RawFtsRow[] {
-    // Use bm25 heading weights: title=5.0, heading=3.0, content=1.0
+    // Use bm25 heading weights: title=5.0, heading=3.0, content=1.0.
+    // `table` is constrained to a TS literal union (`chunks_fts` | `chunks_trigram`)
+    // so the interpolation is safe; `client` and `contentType` are bound parameters.
+    const typeClause = contentType ? 'AND c.type = ?' : '';
     const sql = `
       SELECT c.id, c.title, c.heading, c.content, c.type,
              bm25(${table}, 5.0, 3.0, 1.0) AS bm25_score
       FROM ${table}
       JOIN chunks c ON ${table}.rowid = c.id
       WHERE ${table} MATCH ?
-      ${typeFilter}
+      AND c.client = ?
+      ${typeClause}
       ORDER BY bm25_score
       LIMIT ?
     `;
-    return this.db.prepare(sql).all(ftsQuery, limit) as RawFtsRow[];
+    const params = contentType
+      ? [ftsQuery, client, contentType, limit]
+      : [ftsQuery, client, limit];
+    return this.db.prepare(sql).all(...params) as RawFtsRow[];
   }
 
   /** Tries 1-char deletion candidates against the FTS5 index; returns corrected query or original */
-  private tryFuzzyCorrect(query: string): string {
+  private tryFuzzyCorrect(client: string, query: string): string {
     const words = query.trim().split(/\s+/);
-    const corrected = words.map((word) => this.fuzzyWord(word));
+    const corrected = words.map((word) => this.fuzzyWord(client, word));
     return corrected.join(' ');
   }
 
-  private fuzzyWord(word: string): string {
+  private fuzzyWord(client: string, word: string): string {
     // Only attempt correction for words 4+ chars that look like real words
     if (word.length < 4 || !/^[a-zA-Z]+$/.test(word)) return word;
 
     // Try 1-char deletions (most common typo: extra or wrong char)
     for (let i = 0; i < word.length; i++) {
       const candidate = word.slice(0, i) + word.slice(i + 1);
-      if (this.termExistsInIndex(candidate)) return candidate;
+      if (this.termExistsInIndex(client, candidate)) return candidate;
     }
     // Try adjacent transpositions (swapped chars)
     for (let i = 0; i < word.length - 1; i++) {
       const candidate = word.slice(0, i) + word[i + 1] + word[i] + word.slice(i + 2);
-      if (this.termExistsInIndex(candidate)) return candidate;
+      if (this.termExistsInIndex(client, candidate)) return candidate;
     }
     return word;
   }
 
-  private termExistsInIndex(term: string): boolean {
+  private termExistsInIndex(client: string, term: string): boolean {
+    // Scope the spell-correction probe to this client so corrections from
+    // another tenant's vocabulary do not leak into a client-scoped search.
     try {
       const row = this.db.prepare(
-        `SELECT COUNT(*) as cnt FROM chunks_fts WHERE chunks_fts MATCH ?`
-      ).get(`${term}*`) as { cnt: number } | undefined;
+        `SELECT COUNT(*) AS cnt
+         FROM chunks_fts
+         JOIN chunks c ON chunks_fts.rowid = c.id
+         WHERE chunks_fts MATCH ?
+         AND c.client = ?`
+      ).get(`${term}*`, client) as { cnt: number } | undefined;
       return (row?.cnt ?? 0) > 0;
     } catch {
       return false;
