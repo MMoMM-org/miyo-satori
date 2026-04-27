@@ -66,6 +66,7 @@ export class BuiltinServer {
   constructor(
     private executor: PolyglotExecutor,
     private knowledgeDb: KnowledgeDB,
+    private client: string,
   ) {}
 
   async exec(
@@ -125,8 +126,8 @@ export class BuiltinServer {
 
     // Intent-driven mode: output > threshold → index + search
     if (intent && stdout.length > INTENT_THRESHOLD) {
-      this.knowledgeDb.index({ content: stdout, title: 'exec-output', type: 'prose' });
-      const searchResult = this.knowledgeDb.search({ query: intent, sessionId: 'builtin-exec' });
+      this.knowledgeDb.index({ client: this.client, content: stdout, title: 'exec-output', type: 'prose' });
+      const searchResult = this.knowledgeDb.search({ client: this.client, query: intent, sessionId: 'builtin-exec' });
 
       const response: {
         truncated: boolean;
@@ -224,6 +225,7 @@ export class BuiltinServer {
       } catch (err) {
         // Index the error message so queries can still surface something
         this.knowledgeDb.index({
+          client: this.client,
           content: `Error: ${err instanceof Error ? err.message : String(err)}`,
           title: label,
           type: 'prose',
@@ -231,13 +233,13 @@ export class BuiltinServer {
         continue;
       }
 
-      this.knowledgeDb.index({ content: result.stdout, title: label, type: 'prose' });
+      this.knowledgeDb.index({ client: this.client, content: result.stdout, title: label, type: 'prose' });
     }
 
     // Run each query against the indexed content
     const batchResults: Record<string, KbSearchResult[] | ThrottleBlock> = {};
     for (const query of queries) {
-      batchResults[query] = this.knowledgeDb.search({ query, sessionId: 'builtin-batch' });
+      batchResults[query] = this.knowledgeDb.search({ client: this.client, query, sessionId: 'builtin-batch' });
     }
 
     return { content: JSON.stringify({ results: batchResults }) };

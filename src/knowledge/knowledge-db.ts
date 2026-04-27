@@ -58,9 +58,13 @@ export class KnowledgeDB extends SQLiteBase {
     this.throttleMap = new Map();
     this.trigramAvailable = true;
     // Core table
+    // No client index: all lookups go through FTS+JOIN on rowid (PK) or via
+    // stmtGetChunkById on the PK. A standalone client index would be unused
+    // and add write overhead.
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS chunks (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        client      TEXT    NOT NULL DEFAULT '',
         title       TEXT    NOT NULL DEFAULT '',
         heading     TEXT    NOT NULL DEFAULT '',
         content     TEXT    NOT NULL,
@@ -112,8 +116,8 @@ export class KnowledgeDB extends SQLiteBase {
 
   protected prepareStatements(): void {
     this.stmtInsertChunk = this.db.prepare(
-      `INSERT INTO chunks (title, heading, content, type, source_url)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO chunks (client, title, heading, content, type, source_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     );
     this.stmtGetChunkById = this.db.prepare(
       `SELECT * FROM chunks WHERE id = ?`,
@@ -129,17 +133,18 @@ export class KnowledgeDB extends SQLiteBase {
    * never split across chunk boundaries. Returns the number of chunks stored.
    */
   index(opts: {
+    client: string;
     content: string;
     title?: string;
     type?: 'prose' | 'code';
     sourceUrl?: string;
   }): number {
-    const { content, title = '', type = 'prose', sourceUrl = null } = opts;
+    const { client, content, title = '', type = 'prose', sourceUrl = null } = opts;
     const chunks = splitIntoChunks(content);
 
     const insertMany = this.db.transaction((items: ChunkDraft[]) => {
       for (const item of items) {
-        this.stmtInsertChunk.run(title, item.heading, item.content, type, sourceUrl);
+        this.stmtInsertChunk.run(client, title, item.heading, item.content, type, sourceUrl);
       }
     });
 
@@ -152,12 +157,13 @@ export class KnowledgeDB extends SQLiteBase {
   // ---------------------------------------------------------------------------
 
   search(opts: {
+    client: string;
     query: string;
     contentType?: 'prose' | 'code';
     limit?: number;
     sessionId?: string;
   }): KbSearchResult[] | ThrottleBlock {
-    const { query, contentType, limit = 5, sessionId = 'default' } = opts;
+    const { client, query, contentType, limit = 5, sessionId = 'default' } = opts;
 
     // --- Throttle ---
     const entry = this.throttleMap.get(sessionId) ?? { count: 0 };
@@ -189,13 +195,12 @@ export class KnowledgeDB extends SQLiteBase {
     const safeQuery = sanitizeFtsQuery(query);
     if (!safeQuery) return [];
 
-    const typeFilter = contentType ? `AND c.type = '${contentType.replace(/'/g, "''")}'` : '';
-
     // Porter FTS search
     const porterResults = this.runFtsSearch(
       'chunks_fts',
       safeQuery,
-      typeFilter,
+      client,
+      contentType,
       effectiveLimit * 3, // over-fetch for RRF
     );
 
@@ -206,7 +211,8 @@ export class KnowledgeDB extends SQLiteBase {
         trigramResults = this.runFtsSearch(
           'chunks_trigram',
           safeQuery,
-          typeFilter,
+          client,
+          contentType,
           effectiveLimit * 3,
         );
       } catch {
@@ -217,14 +223,15 @@ export class KnowledgeDB extends SQLiteBase {
     // If no results and query has words, try simple fuzzy correction
     let combinedResults: RawFtsRow[];
     if (porterResults.length === 0 && trigramResults.length === 0) {
-      const corrected = this.tryFuzzyCorrect(query);
+      const corrected = this.tryFuzzyCorrect(client, query);
       if (corrected && corrected !== safeQuery) {
         const safeCorrection = sanitizeFtsQuery(corrected);
         if (safeCorrection) {
           const fuzzyResults = this.runFtsSearch(
             'chunks_fts',
             safeCorrection,
-            typeFilter,
+            client,
+            contentType,
             effectiveLimit * 3,
           );
           combinedResults = fuzzyResults;
@@ -268,10 +275,11 @@ export class KnowledgeDB extends SQLiteBase {
   // ---------------------------------------------------------------------------
 
   async fetchAndIndex(opts: {
+    client: string;
     url: string;
     title?: string;
   }): Promise<{ indexed: number } | { error: string }> {
-    const { url, title } = opts;
+    const { client, url, title } = opts;
 
     // Follow redirects manually, capped at 5 (spec: max 5 redirects)
     const MAX_REDIRECTS = 5;
@@ -315,6 +323,7 @@ export class KnowledgeDB extends SQLiteBase {
     const cleaned = stripHtml(text);
 
     const indexed = this.index({
+      client,
       content: cleaned,
       title: title ?? url,
       sourceUrl: url,
@@ -328,54 +337,68 @@ export class KnowledgeDB extends SQLiteBase {
   // ---------------------------------------------------------------------------
 
   private runFtsSearch(
-    table: string,
+    table: 'chunks_fts' | 'chunks_trigram',
     ftsQuery: string,
-    typeFilter: string,
+    client: string,
+    contentType: 'prose' | 'code' | undefined,
     limit: number,
   ): RawFtsRow[] {
-    // Use bm25 heading weights: title=5.0, heading=3.0, content=1.0
+    // Use bm25 heading weights: title=5.0, heading=3.0, content=1.0.
+    // `table` is constrained to a TS literal union (`chunks_fts` | `chunks_trigram`)
+    // so the interpolation is safe; `client` and `contentType` are bound parameters.
+    const typeClause = contentType ? 'AND c.type = ?' : '';
     const sql = `
       SELECT c.id, c.title, c.heading, c.content, c.type,
              bm25(${table}, 5.0, 3.0, 1.0) AS bm25_score
       FROM ${table}
       JOIN chunks c ON ${table}.rowid = c.id
       WHERE ${table} MATCH ?
-      ${typeFilter}
+      AND c.client = ?
+      ${typeClause}
       ORDER BY bm25_score
       LIMIT ?
     `;
-    return this.db.prepare(sql).all(ftsQuery, limit) as RawFtsRow[];
+    const params = contentType
+      ? [ftsQuery, client, contentType, limit]
+      : [ftsQuery, client, limit];
+    return this.db.prepare(sql).all(...params) as RawFtsRow[];
   }
 
   /** Tries 1-char deletion candidates against the FTS5 index; returns corrected query or original */
-  private tryFuzzyCorrect(query: string): string {
+  private tryFuzzyCorrect(client: string, query: string): string {
     const words = query.trim().split(/\s+/);
-    const corrected = words.map((word) => this.fuzzyWord(word));
+    const corrected = words.map((word) => this.fuzzyWord(client, word));
     return corrected.join(' ');
   }
 
-  private fuzzyWord(word: string): string {
+  private fuzzyWord(client: string, word: string): string {
     // Only attempt correction for words 4+ chars that look like real words
     if (word.length < 4 || !/^[a-zA-Z]+$/.test(word)) return word;
 
     // Try 1-char deletions (most common typo: extra or wrong char)
     for (let i = 0; i < word.length; i++) {
       const candidate = word.slice(0, i) + word.slice(i + 1);
-      if (this.termExistsInIndex(candidate)) return candidate;
+      if (this.termExistsInIndex(client, candidate)) return candidate;
     }
     // Try adjacent transpositions (swapped chars)
     for (let i = 0; i < word.length - 1; i++) {
       const candidate = word.slice(0, i) + word[i + 1] + word[i] + word.slice(i + 2);
-      if (this.termExistsInIndex(candidate)) return candidate;
+      if (this.termExistsInIndex(client, candidate)) return candidate;
     }
     return word;
   }
 
-  private termExistsInIndex(term: string): boolean {
+  private termExistsInIndex(client: string, term: string): boolean {
+    // Scope the spell-correction probe to this client so corrections from
+    // another tenant's vocabulary do not leak into a client-scoped search.
     try {
       const row = this.db.prepare(
-        `SELECT COUNT(*) as cnt FROM chunks_fts WHERE chunks_fts MATCH ?`
-      ).get(`${term}*`) as { cnt: number } | undefined;
+        `SELECT COUNT(*) AS cnt
+         FROM chunks_fts
+         JOIN chunks c ON chunks_fts.rowid = c.id
+         WHERE chunks_fts MATCH ?
+         AND c.client = ?`
+      ).get(`${term}*`, client) as { cnt: number } | undefined;
       return (row?.cnt ?? 0) > 0;
     } catch {
       return false;

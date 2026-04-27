@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   if (!paths) {
     process.exit(0);
   }
-  const { dbPath } = paths;
+  const { dbPath, client } = paths;
 
   let sessionDb: SessionDB | null = null;
   let contentDb: ContentDB | null = null;
@@ -24,7 +24,7 @@ async function main(): Promise<void> {
     sessionDb = new SessionDB(dbPath);
     contentDb = new ContentDB(dbPath);
 
-    sessionDb.ensureSession(sessionId, repoRoot);
+    sessionDb.ensureSession(client, sessionId, repoRoot);
 
     const toolName = payload.tool_name ?? '';
     const toolInput = payload.tool_input;
@@ -33,6 +33,7 @@ async function main(): Promise<void> {
     const event = extractEvent(toolName, toolInput, toolOutput);
     if (event) {
       sessionDb.insertEvent(
+        client,
         sessionId,
         event.type,
         event.category,
@@ -43,9 +44,13 @@ async function main(): Promise<void> {
     }
 
     if (CAPTURE_TOOLS.has(toolName) && toolOutput != null) {
+      // server='hook' marks captures that came from the PostToolUse hook
+      // rather than from a downstream MCP server dispatched by the gateway.
+      // The client column already records which Claude application produced it.
       contentDb.insertCapture(
+        client,
         sessionId,
-        'claude-code',
+        'hook',
         toolName,
         JSON.stringify(toolInput),
         String(toolOutput).slice(0, 10000),

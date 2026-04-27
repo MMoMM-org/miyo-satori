@@ -3,6 +3,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { KnowledgeDB } from '../knowledge/knowledge-db.js';
 import { registerSatoriKb } from '../tools/satori-kb.js';
 
+const C = 'test-client';
+
 // ---------------------------------------------------------------------------
 // Helper — call a registered MCP tool by name
 // ---------------------------------------------------------------------------
@@ -38,7 +40,7 @@ describe('satori_kb', () => {
   beforeEach(() => {
     mcpServer = new McpServer({ name: 'test', version: '0.1.0' });
     db = new KnowledgeDB(':memory:');
-    registerSatoriKb(mcpServer, db);
+    registerSatoriKb(mcpServer, db, C);
   });
 
   afterEach(() => {
@@ -74,7 +76,7 @@ describe('satori_kb', () => {
 
   it('search with query returns array of results with snippet, title, score fields', async () => {
     // Index some content first
-    db.index({ content: '## BM25 ranking\nThe BM25 algorithm ranks documents.', title: 'BM25 Doc' });
+    db.index({ client: C, content: '## BM25 ranking\nThe BM25 algorithm ranks documents.', title: 'BM25 Doc' });
 
     const result = await callTool(mcpServer, 'satori_kb', {
       sub_command: 'search',
@@ -103,8 +105,8 @@ describe('satori_kb', () => {
 
   it('contentType filter passes to KnowledgeDB correctly', async () => {
     // Index prose and code content
-    db.index({ content: 'Prose content about functions.', title: 'Prose', type: 'prose' });
-    db.index({ content: 'function hello() { return 42; }', title: 'Code', type: 'code' });
+    db.index({ client: C, content: 'Prose content about functions.', title: 'Prose', type: 'prose' });
+    db.index({ client: C, content: 'function hello() { return 42; }', title: 'Code', type: 'code' });
 
     const result = await callTool(mcpServer, 'satori_kb', {
       sub_command: 'search',
@@ -192,7 +194,7 @@ describe('satori_kb', () => {
   // -------------------------------------------------------------------------
 
   it('search called 9 times returns blocked: true and redirect: satori_exec (not isError)', async () => {
-    db.index({ content: 'Throttle test content with searchable terms.', title: 'Throttle Doc' });
+    db.index({ client: C, content: 'Throttle test content with searchable terms.', title: 'Throttle Doc' });
 
     const sessionId = 'throttle-test-session';
     let lastResult: { content: Array<{ type: string; text: string }>; isError?: boolean } | null =
@@ -228,7 +230,7 @@ describe('satori_kb', () => {
     } as unknown as KnowledgeDB;
 
     const throwServer = new McpServer({ name: 'throw-test', version: '0.1.0' });
-    registerSatoriKb(throwServer, throwingDb);
+    registerSatoriKb(throwServer, throwingDb, C);
 
     const result = await callTool(throwServer, 'satori_kb', {
       sub_command: 'index',

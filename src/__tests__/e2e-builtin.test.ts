@@ -19,6 +19,8 @@ import { KnowledgeDB } from '../knowledge/knowledge-db.js';
 import { PolyglotExecutor } from '../execution/executor.js';
 import { BuiltinServer } from '../execution/builtin-server.js';
 
+const C = 'test-client';
+
 describe('E2E: BuiltinRuntime via GatewayRouter', () => {
   let tmpDir: string;
   let router: GatewayRouter;
@@ -30,12 +32,12 @@ describe('E2E: BuiltinRuntime via GatewayRouter', () => {
     const dbPath = join(tmpDir, 'db.sqlite');
     const sessionDb = new SessionDB(dbPath);
     contentDb = new ContentDB(dbPath);
-    sessionDb.ensureSession('e2e-session', tmpDir);
+    sessionDb.ensureSession(C, 'e2e-session', tmpDir);
     sessionDb.close();
 
     knowledgeDb = new KnowledgeDB(join(tmpDir, 'kb.sqlite'));
     const executor = new PolyglotExecutor();
-    const builtinServer = new BuiltinServer(executor, knowledgeDb);
+    const builtinServer = new BuiltinServer(executor, knowledgeDb, C);
 
     const registry = new ServerRegistry();
     registry.load({
@@ -55,6 +57,8 @@ describe('E2E: BuiltinRuntime via GatewayRouter', () => {
       auditLog,
       contentDb,
       builtinServer,
+      client: C,
+      defaultSessionId: 'e2e-session',
       getClient: () => null,
     });
   });
@@ -75,7 +79,7 @@ describe('E2E: BuiltinRuntime via GatewayRouter', () => {
     await router.exec('bash', 'run', { language: 'shell', code: 'echo captured' }, 'e2e-session');
     // give the async summary a tick to complete
     await new Promise((r) => setImmediate(r));
-    const captures = contentDb.search('captured');
+    const captures = contentDb.search(C, 'captured');
     expect(captures.length).toBeGreaterThan(0);
   });
 

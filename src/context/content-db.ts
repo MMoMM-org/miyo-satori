@@ -2,6 +2,7 @@ import { SQLiteBase } from '../db-base.js';
 
 export interface Capture {
   id: number;
+  client: string;
   session_id: string;
   server: string;
   tool: string;
@@ -22,6 +23,7 @@ export class ContentDB extends SQLiteBase {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS captures (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        client      TEXT    NOT NULL DEFAULT '',
         session_id  TEXT    NOT NULL,
         server      TEXT    NOT NULL,
         tool        TEXT    NOT NULL,
@@ -36,7 +38,7 @@ export class ContentDB extends SQLiteBase {
         content='captures', content_rowid='id'
       );
 
-      CREATE INDEX IF NOT EXISTS idx_captures_session ON captures(session_id);
+      CREATE INDEX IF NOT EXISTS idx_captures_client_session ON captures(client, session_id);
 
       CREATE TRIGGER IF NOT EXISTS captures_ai AFTER INSERT ON captures BEGIN
         INSERT INTO captures_fts(rowid, server, tool, output_text, summary)
@@ -50,6 +52,7 @@ export class ContentDB extends SQLiteBase {
   }
 
   insertCapture(
+    client: string,
     sessionId: string,
     server: string,
     tool: string,
@@ -59,43 +62,45 @@ export class ContentDB extends SQLiteBase {
     const capturedAt = Math.floor(Date.now() / 1000);
     const result = this.db
       .prepare(
-        `INSERT INTO captures (session_id, server, tool, input_json, output_text, captured_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO captures (client, session_id, server, tool, input_json, output_text, captured_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(sessionId, server, tool, inputJson, outputText, capturedAt);
+      .run(client, sessionId, server, tool, inputJson, outputText, capturedAt);
     return result.lastInsertRowid as number;
   }
 
   updateSummary(id: number, summary: string): void {
-    // Fetch current row values for FTS rebuild
-    const row = this.db
-      .prepare('SELECT server, tool, output_text FROM captures WHERE id = ?')
-      .get(id) as { server: string; tool: string; output_text: string } | undefined;
+    // Wrap the SELECT + UPDATE + FTS rebuild in a single transaction so a
+    // concurrent writer cannot interleave between FTS-delete and FTS-insert.
+    const update = this.db.transaction(() => {
+      const row = this.db
+        .prepare('SELECT server, tool, output_text FROM captures WHERE id = ?')
+        .get(id) as { server: string; tool: string; output_text: string } | undefined;
 
-    if (!row) return;
+      if (!row) return;
 
-    // Update the main table
-    this.db
-      .prepare('UPDATE captures SET summary = ? WHERE id = ?')
-      .run(summary, id);
+      this.db
+        .prepare('UPDATE captures SET summary = ? WHERE id = ?')
+        .run(summary, id);
 
-    // Rebuild FTS for this row: delete then re-insert
-    this.db
-      .prepare(
-        `INSERT INTO captures_fts(captures_fts, rowid, server, tool, output_text, summary)
-         VALUES ('delete', ?, ?, ?, ?, ?)`,
-      )
-      .run(id, row.server, row.tool, row.output_text, '');
+      this.db
+        .prepare(
+          `INSERT INTO captures_fts(captures_fts, rowid, server, tool, output_text, summary)
+           VALUES ('delete', ?, ?, ?, ?, ?)`,
+        )
+        .run(id, row.server, row.tool, row.output_text, '');
 
-    this.db
-      .prepare(
-        `INSERT INTO captures_fts(rowid, server, tool, output_text, summary)
-         VALUES (?, ?, ?, ?, ?)`,
-      )
-      .run(id, row.server, row.tool, row.output_text, summary);
+      this.db
+        .prepare(
+          `INSERT INTO captures_fts(rowid, server, tool, output_text, summary)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(id, row.server, row.tool, row.output_text, summary);
+    });
+    update();
   }
 
-  search(q: string, limit = 10): SearchResult[] {
+  search(client: string, q: string, limit = 10): SearchResult[] {
     // Wrap in FTS5 phrase quotes so hyphens and other operators are treated as literals
     const ftsQuery = `"${q.replace(/"/g, '""')}"`;
     return this.db
@@ -103,24 +108,24 @@ export class ContentDB extends SQLiteBase {
         `SELECT c.server, c.tool, c.summary
          FROM captures_fts
          JOIN captures c ON captures_fts.rowid = c.id
-         WHERE captures_fts MATCH ?
+         WHERE captures_fts MATCH ? AND c.client = ?
          ORDER BY captures_fts.rank
          LIMIT ?`,
       )
-      .all(ftsQuery, limit) as SearchResult[];
+      .all(ftsQuery, client, limit) as SearchResult[];
   }
 
-  getBySession(sessionId: string): Capture[] {
+  getBySession(client: string, sessionId: string): Capture[] {
     return this.db
-      .prepare('SELECT * FROM captures WHERE session_id = ? ORDER BY id ASC')
-      .all(sessionId) as Capture[];
+      .prepare('SELECT * FROM captures WHERE client = ? AND session_id = ? ORDER BY id ASC')
+      .all(client, sessionId) as Capture[];
   }
 
-  pruneOlderThan(days: number): number {
+  pruneOlderThan(client: string, days: number): number {
     const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
     const result = this.db
-      .prepare('DELETE FROM captures WHERE captured_at < ?')
-      .run(cutoff);
+      .prepare('DELETE FROM captures WHERE client = ? AND captured_at < ?')
+      .run(client, cutoff);
     return result.changes;
   }
 }

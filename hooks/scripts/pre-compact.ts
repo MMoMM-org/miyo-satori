@@ -12,14 +12,14 @@ async function main(): Promise<void> {
   if (!paths) {
     process.exit(0);
   }
-  const { dbPath } = paths;
+  const { dbPath, client } = paths;
 
   let sessionDb: SessionDB | null = null;
   try {
     sessionDb = new SessionDB(dbPath);
-    sessionDb.ensureSession(sessionId, repoRoot);
+    sessionDb.ensureSession(client, sessionId, repoRoot);
 
-    const events = sessionDb.getEvents(sessionId);
+    const events = sessionDb.getEvents(client, sessionId);
 
     // compactCount in the snapshot is informational metadata.
     // The actual count is tracked in session_meta via incrementCompactCount.
@@ -27,8 +27,8 @@ async function main(): Promise<void> {
     const compactCount = events.length;
 
     const xml = buildResumeSnapshot(events, { compactCount });
-    sessionDb.upsertResume(sessionId, xml, events.length);
-    sessionDb.incrementCompactCount(sessionId);
+    sessionDb.upsertResume(client, sessionId, xml, events.length);
+    sessionDb.incrementCompactCount(client, sessionId);
   } catch (err) {
     process.stderr.write(`[satori:PreCompact] ${err}\n`);
   } finally {

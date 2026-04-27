@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SessionDB } from '../context/session-db.js';
 
+const C = 'test-client';
+
 describe('SessionDB', () => {
   let db: SessionDB;
 
   beforeEach(() => {
     db = new SessionDB(':memory:');
-    db.ensureSession('s1', '/project');
+    db.ensureSession(C, 's1', '/project');
   });
 
   afterEach(() => {
@@ -14,8 +16,8 @@ describe('SessionDB', () => {
   });
 
   it('insertEvent stores an event and getEvents returns it ordered by id', () => {
-    db.insertEvent('s1', 'file_read', 'file', 1, '/src/index.ts', 'post-tool');
-    const events = db.getEvents('s1');
+    db.insertEvent(C, 's1', 'file_read', 'file', 1, '/src/index.ts', 'post-tool');
+    const events = db.getEvents(C, 's1');
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('file_read');
     expect(events[0].data).toBe('/src/index.ts');
@@ -24,28 +26,28 @@ describe('SessionDB', () => {
   });
 
   it('deduplicates same type+data within 5-event window', () => {
-    db.insertEvent('s1', 'file_read', 'file', 1, '/src/index.ts', 'hook');
-    db.insertEvent('s1', 'file_read', 'file', 1, '/src/index.ts', 'hook');
-    const events = db.getEvents('s1');
+    db.insertEvent(C, 's1', 'file_read', 'file', 1, '/src/index.ts', 'hook');
+    db.insertEvent(C, 's1', 'file_read', 'file', 1, '/src/index.ts', 'hook');
+    const events = db.getEvents(C, 's1');
     expect(events).toHaveLength(1);
   });
 
   it('does not deduplicate different data even with same type', () => {
-    db.insertEvent('s1', 'file_read', 'file', 1, '/src/a.ts', 'hook');
-    db.insertEvent('s1', 'file_read', 'file', 1, '/src/b.ts', 'hook');
-    const events = db.getEvents('s1');
+    db.insertEvent(C, 's1', 'file_read', 'file', 1, '/src/a.ts', 'hook');
+    db.insertEvent(C, 's1', 'file_read', 'file', 1, '/src/b.ts', 'hook');
+    const events = db.getEvents(C, 's1');
     expect(events).toHaveLength(2);
   });
 
   it('allows same type+data after 5 different events (dedup window expired)', () => {
-    db.insertEvent('s1', 'file_read', 'file', 1, '/src/target.ts', 'hook');
+    db.insertEvent(C, 's1', 'file_read', 'file', 1, '/src/target.ts', 'hook');
     // Insert 5 different events to push the first one out of the 5-event window
     for (let i = 0; i < 5; i++) {
-      db.insertEvent('s1', 'file_read', 'file', 1, `/src/other-${i}.ts`, 'hook');
+      db.insertEvent(C, 's1', 'file_read', 'file', 1, `/src/other-${i}.ts`, 'hook');
     }
     // Now same as first should be allowed again
-    db.insertEvent('s1', 'file_read', 'file', 1, '/src/target.ts', 'hook');
-    const events = db.getEvents('s1');
+    db.insertEvent(C, 's1', 'file_read', 'file', 1, '/src/target.ts', 'hook');
+    const events = db.getEvents(C, 's1');
     // 1 original + 5 others + 1 re-inserted = 7
     expect(events).toHaveLength(7);
   });
@@ -53,22 +55,22 @@ describe('SessionDB', () => {
   it('FIFO eviction: count stays <= 1000 after inserting 1001 P3 events', () => {
     // Insert 1001 unique events (all priority 3)
     for (let i = 0; i < 1001; i++) {
-      db.insertEvent('s1', 'subagent_launched', 'subagent', 3, `desc-${i}`, 'hook');
+      db.insertEvent(C, 's1', 'subagent_launched', 'subagent', 3, `desc-${i}`, 'hook');
     }
-    const events = db.getEvents('s1');
+    const events = db.getEvents(C, 's1');
     expect(events.length).toBeLessThanOrEqual(1000);
   });
 
   it('eviction prefers lowest priority (highest number) first', () => {
     // Insert 999 P1 events and 1 P3 event
     for (let i = 0; i < 999; i++) {
-      db.insertEvent('s1', 'file_read', 'file', 1, `/p1-${i}.ts`, 'hook');
+      db.insertEvent(C, 's1', 'file_read', 'file', 1, `/p1-${i}.ts`, 'hook');
     }
-    db.insertEvent('s1', 'subagent_launched', 'subagent', 3, 'the-p3-event', 'hook');
+    db.insertEvent(C, 's1', 'subagent_launched', 'subagent', 3, 'the-p3-event', 'hook');
     // 1000 events now — insert one more P1
-    db.insertEvent('s1', 'file_read', 'file', 1, '/trigger-evict.ts', 'hook');
+    db.insertEvent(C, 's1', 'file_read', 'file', 1, '/trigger-evict.ts', 'hook');
 
-    const events = db.getEvents('s1');
+    const events = db.getEvents(C, 's1');
     expect(events.length).toBeLessThanOrEqual(1000);
     // The P3 event should have been evicted
     const p3 = events.find((e) => e.data === 'the-p3-event');
@@ -76,8 +78,8 @@ describe('SessionDB', () => {
   });
 
   it('upsertResume + getResume roundtrip returns stored snapshot', () => {
-    db.upsertResume('s1', '<session_resume />', 42);
-    const resume = db.getResume('s1');
+    db.upsertResume(C, 's1', '<session_resume />', 42);
+    const resume = db.getResume(C, 's1');
     expect(resume).not.toBeNull();
     expect(resume!.snapshot).toBe('<session_resume />');
     expect(resume!.event_count).toBe(42);
@@ -85,36 +87,36 @@ describe('SessionDB', () => {
   });
 
   it('markResumeConsumed -> getResume returns null', () => {
-    db.upsertResume('s1', '<session_resume />', 10);
-    db.markResumeConsumed('s1');
-    const resume = db.getResume('s1');
+    db.upsertResume(C, 's1', '<session_resume />', 10);
+    db.markResumeConsumed(C, 's1');
+    const resume = db.getResume(C, 's1');
     expect(resume).toBeNull();
   });
 
   it('upsertResume replaces existing entry and resets consumed flag', () => {
-    db.upsertResume('s1', '<first />', 5);
-    db.markResumeConsumed('s1');
-    db.upsertResume('s1', '<second />', 10);
-    const resume = db.getResume('s1');
+    db.upsertResume(C, 's1', '<first />', 5);
+    db.markResumeConsumed(C, 's1');
+    db.upsertResume(C, 's1', '<second />', 10);
+    const resume = db.getResume(C, 's1');
     expect(resume).not.toBeNull();
     expect(resume!.snapshot).toBe('<second />');
     expect(resume!.consumed).toBe(0);
   });
 
   it('incrementCompactCount increments the counter', () => {
-    db.incrementCompactCount('s1');
-    db.incrementCompactCount('s1');
+    db.incrementCompactCount(C, 's1');
+    db.incrementCompactCount(C, 's1');
     const meta = db['db']
-      .prepare('SELECT compact_count FROM session_meta WHERE session_id = ?')
-      .get('s1') as { compact_count: number };
+      .prepare('SELECT compact_count FROM session_meta WHERE client = ? AND session_id = ?')
+      .get(C, 's1') as { compact_count: number };
     expect(meta.compact_count).toBe(2);
   });
 
-  it('getSessionStats returns numeric counts', () => {
-    db.insertEvent('s1', 'file_read', 'file', 1, '/a.ts', 'hook');
-    db.upsertResume('s1', '<xml />', 1);
+  it('getSessionStats returns numeric counts for the requested client', () => {
+    db.insertEvent(C, 's1', 'file_read', 'file', 1, '/a.ts', 'hook');
+    db.upsertResume(C, 's1', '<xml />', 1);
 
-    const stats = db.getSessionStats();
+    const stats = db.getSessionStats(C);
     expect(typeof stats.session_count).toBe('number');
     expect(typeof stats.event_count).toBe('number');
     expect(typeof stats.resume_count).toBe('number');
@@ -123,13 +125,76 @@ describe('SessionDB', () => {
     expect(stats.resume_count).toBeGreaterThanOrEqual(1);
   });
 
+  it('getSessionStats is client-scoped — does not bleed across clients', () => {
+    db.ensureSession('client-a', 'sa', '/a');
+    db.ensureSession('client-b', 'sb', '/b');
+    db.insertEvent('client-a', 'sa', 'file_read', 'file', 1, '/a.ts', 'hook');
+    db.insertEvent('client-a', 'sa', 'file_edit', 'file', 1, '/b.ts', 'hook');
+    db.insertEvent('client-b', 'sb', 'file_read', 'file', 1, '/x.ts', 'hook');
+    db.upsertResume('client-a', 'sa', '<a />', 1);
+    db.upsertResume('client-b', 'sb', '<b />', 1);
+
+    const a = db.getSessionStats('client-a');
+    const b = db.getSessionStats('client-b');
+    expect(a.event_count).toBe(2);
+    expect(b.event_count).toBe(1);
+    expect(a.resume_count).toBe(1);
+    expect(b.resume_count).toBe(1);
+    expect(db.getSessionStats('client-c').event_count).toBe(0);
+  });
+
+  it('getEvents is client-scoped — same session_id under different clients does not bleed', () => {
+    db.ensureSession('client-a', 'shared-id', '/a');
+    db.ensureSession('client-b', 'shared-id', '/b');
+    db.insertEvent('client-a', 'shared-id', 'file_read', 'file', 1, '/a.ts', 'hook');
+    db.insertEvent('client-b', 'shared-id', 'file_read', 'file', 1, '/b.ts', 'hook');
+
+    const a = db.getEvents('client-a', 'shared-id');
+    const b = db.getEvents('client-b', 'shared-id');
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+    expect(a[0].data).toBe('/a.ts');
+    expect(b[0].data).toBe('/b.ts');
+  });
+
+  it('getResume is client-scoped — same session_id under different clients does not bleed', () => {
+    db.upsertResume('client-a', 'shared-id', '<a />', 1);
+    db.upsertResume('client-b', 'shared-id', '<b />', 1);
+
+    expect(db.getResume('client-a', 'shared-id')!.snapshot).toBe('<a />');
+    expect(db.getResume('client-b', 'shared-id')!.snapshot).toBe('<b />');
+  });
+
   it('getEvents returns empty array for unknown session', () => {
-    const events = db.getEvents('nonexistent');
+    const events = db.getEvents(C, 'nonexistent');
     expect(events).toEqual([]);
   });
 
   it('getResume returns null for unknown session', () => {
-    const resume = db.getResume('nonexistent');
+    const resume = db.getResume(C, 'nonexistent');
     expect(resume).toBeNull();
+  });
+
+  it('getLatestResumeForClient returns latest unconsumed resume across sessions', () => {
+    // First session
+    db.upsertResume(C, 's1', '<first />', 5);
+    // Second session — same client, different session_id
+    db.ensureSession(C, 's2', '/project');
+    db.upsertResume(C, 's2', '<second />', 10);
+
+    const latest = db.getLatestResumeForClient(C);
+    expect(latest).not.toBeNull();
+    expect(latest!.snapshot).toBe('<second />');
+  });
+
+  it('getLatestResumeForClient is client-scoped — does not bleed across clients', () => {
+    db.upsertResume('client-a', 'sa', '<a />', 1);
+    db.upsertResume('client-b', 'sb', '<b />', 1);
+
+    const a = db.getLatestResumeForClient('client-a');
+    const b = db.getLatestResumeForClient('client-b');
+    expect(a!.snapshot).toBe('<a />');
+    expect(b!.snapshot).toBe('<b />');
+    expect(db.getLatestResumeForClient('client-c')).toBeNull();
   });
 });

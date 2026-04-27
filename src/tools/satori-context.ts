@@ -4,8 +4,6 @@ import type { SessionDB } from '../context/session-db.js';
 import type { ContentDB } from '../context/content-db.js';
 import { buildResumeSnapshot } from '../context/snapshot.js';
 
-const TOOL_SESSION_ID = 'tool-session';
-
 const inputSchema = {
   sub_command: z.enum(['restore', 'query', 'status', 'flush']),
   q: z.string().optional(),
@@ -17,6 +15,8 @@ export function registerSatoriContext(
   server: McpServer,
   sessionDb: SessionDB,
   contentDb: ContentDB,
+  client: string,
+  defaultSessionId: string,
 ): void {
   server.tool(
     'satori_context',
@@ -24,7 +24,7 @@ export function registerSatoriContext(
     inputSchema,
     async (args) => {
       try {
-        const result = handleSubCommand(args, sessionDb, contentDb);
+        const result = handleSubCommand(args, sessionDb, contentDb, client, defaultSessionId);
         return {
           content: [{ type: 'text' as const, text: result }],
         };
@@ -48,27 +48,34 @@ function handleSubCommand(
   },
   sessionDb: SessionDB,
   contentDb: ContentDB,
+  client: string,
+  defaultSessionId: string,
 ): string {
-  const sessionId = args.session_id ?? TOOL_SESSION_ID;
+  const sessionId = args.session_id ?? defaultSessionId;
+  const explicitSession = args.session_id !== undefined;
 
   switch (args.sub_command) {
     case 'restore': {
-      const resume = sessionDb.getResume(sessionId);
+      // Without explicit session_id: cross-session lookup for this client.
+      // With explicit session_id: that specific session within this client.
+      const resume = explicitSession
+        ? sessionDb.getResume(client, sessionId)
+        : sessionDb.getLatestResumeForClient(client);
       if (!resume) return 'No session snapshot available.';
-      sessionDb.markResumeConsumed(sessionId);
+      sessionDb.markResumeConsumed(client, resume.session_id);
       return resume.snapshot;
     }
 
     case 'query': {
       const q = args.q ?? '';
       if (!q) return JSON.stringify([]);
-      const results = contentDb.search(q, args.limit ?? 10);
+      const results = contentDb.search(client, q, args.limit ?? 10);
       return JSON.stringify(results);
     }
 
     case 'status': {
-      const stats = sessionDb.getSessionStats();
-      const captureCount = contentDb.getBySession(sessionId).length;
+      const stats = sessionDb.getSessionStats(client);
+      const captureCount = contentDb.getBySession(client, sessionId).length;
       const status = {
         sessions: stats.session_count,
         events: stats.event_count,
@@ -79,9 +86,9 @@ function handleSubCommand(
     }
 
     case 'flush': {
-      const events = sessionDb.getEvents(sessionId);
+      const events = sessionDb.getEvents(client, sessionId);
       const snapshot = buildResumeSnapshot(events);
-      sessionDb.upsertResume(sessionId, snapshot, events.length);
+      sessionDb.upsertResume(client, sessionId, snapshot, events.length);
       return `Snapshot generated: ${Buffer.byteLength(snapshot, 'utf8')} bytes`;
     }
 

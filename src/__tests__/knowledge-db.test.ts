@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { KnowledgeDB, KbSearchResult, ThrottleBlock } from '../knowledge/knowledge-db.js';
 
+const C = 'test-client';
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -41,7 +43,7 @@ describe('KnowledgeDB', () => {
   // -------------------------------------------------------------------------
 
   it('index() returns chunk count for headingless content', () => {
-    const n = db.index({ content: 'Hello world. No headings here.', title: 'test' });
+    const n = db.index({ client: C, content: 'Hello world. No headings here.', title: 'test' });
     expect(n).toBe(1);
   });
 
@@ -57,7 +59,7 @@ describe('KnowledgeDB', () => {
       'Sub-section content.',
     ].join('\n');
 
-    const n = db.index({ content: md, title: 'Doc' });
+    const n = db.index({ client: C, content: md, title: 'Doc' });
     expect(n).toBe(3);
   });
 
@@ -75,13 +77,13 @@ describe('KnowledgeDB', () => {
       'Text after fence.',
     ].join('\n');
 
-    const n = db.index({ content: md, title: 'Code doc' });
+    const n = db.index({ client: C, content: md, title: 'Code doc' });
     // Should produce exactly 1 chunk (everything under ## Setup)
     expect(n).toBe(1);
   });
 
   it('index() returns 0 for empty content', () => {
-    const n = db.index({ content: '', title: 'empty' });
+    const n = db.index({ client: C, content: '', title: 'empty' });
     expect(n).toBe(0);
   });
 
@@ -90,23 +92,23 @@ describe('KnowledgeDB', () => {
   // -------------------------------------------------------------------------
 
   it('search() finds inserted content', () => {
-    db.index({ content: '## Overview\nThis document covers xenomorph biology.', title: 'Bio' });
-    const results = db.search({ query: 'xenomorph', sessionId: 'find-test' });
+    db.index({ client: C, content: '## Overview\nThis document covers xenomorph biology.', title: 'Bio' });
+    const results = db.search({ client: C, query: 'xenomorph', sessionId: 'find-test' });
     expect(Array.isArray(results)).toBe(true);
     expect((results as KbSearchResult[]).length).toBeGreaterThan(0);
     expect((results as KbSearchResult[])[0].snippet).toMatch(/xenomorph/i);
   });
 
   it('search() returns empty array for no match', () => {
-    db.index({ content: '## Intro\nHello world content.', title: 'doc' });
-    const results = db.search({ query: 'zzznomatch999', sessionId: 'empty-test' });
+    db.index({ client: C, content: '## Intro\nHello world content.', title: 'doc' });
+    const results = db.search({ client: C, query: 'zzznomatch999', sessionId: 'empty-test' });
     expect(Array.isArray(results)).toBe(true);
     expect((results as KbSearchResult[]).length).toBe(0);
   });
 
   it('search() returns KbSearchResult[] sorted by score (descending)', () => {
     db.index({
-      content: [
+      client: C, content: [
         '## Alpha',
         'The quick brown fox jumps over the lazy dog.',
         '## Beta',
@@ -114,7 +116,7 @@ describe('KnowledgeDB', () => {
       ].join('\n'),
       title: 'Scores',
     });
-    const results = db.search({ query: 'fox', sessionId: 'sort-test' }) as KbSearchResult[];
+    const results = db.search({ client: C, query: 'fox', sessionId: 'sort-test' }) as KbSearchResult[];
     expect(Array.isArray(results)).toBe(true);
     for (let i = 1; i < results.length; i++) {
       expect(results[i - 1].score).toBeGreaterThanOrEqual(results[i].score);
@@ -122,17 +124,17 @@ describe('KnowledgeDB', () => {
   });
 
   it('search() contentType filter returns only matching type', () => {
-    db.index({ content: '## Prose chunk\nThis is prose text.', title: 'p', type: 'prose' });
-    db.index({ content: '## Code chunk\nThis is prose text too.', title: 'c', type: 'code' });
+    db.index({ client: C, content: '## Prose chunk\nThis is prose text.', title: 'p', type: 'prose' });
+    db.index({ client: C, content: '## Code chunk\nThis is prose text too.', title: 'c', type: 'code' });
 
     const proseResults = db.search({
-      query: 'prose',
+      client: C, query: 'prose',
       contentType: 'prose',
       sessionId: 'filter-test-prose',
     }) as KbSearchResult[];
 
     const codeResults = db.search({
-      query: 'prose',
+      client: C, query: 'prose',
       contentType: 'code',
       sessionId: 'filter-test-code',
     }) as KbSearchResult[];
@@ -148,12 +150,12 @@ describe('KnowledgeDB', () => {
   it('throttle: calls 1-3 return at most 2 results', () => {
     // Insert plenty of content so limit is the bottleneck, not result count
     for (let i = 0; i < 10; i++) {
-      db.index({ content: `## Item ${i}\nthrottle-term content item number ${i}`, title: `t${i}` });
+      db.index({ client: C, content: `## Item ${i}\nthrottle-term content item number ${i}`, title: `t${i}` });
     }
 
     const session = 'throttle-a';
     for (let call = 1; call <= 3; call++) {
-      const res = db.search({ query: 'throttle-term', sessionId: session });
+      const res = db.search({ client: C, query: 'throttle-term', sessionId: session });
       expect(Array.isArray(res)).toBe(true);
       expect((res as KbSearchResult[]).length).toBeLessThanOrEqual(2);
     }
@@ -161,17 +163,17 @@ describe('KnowledgeDB', () => {
 
   it('throttle: calls 4-8 return at most 1 result', () => {
     for (let i = 0; i < 10; i++) {
-      db.index({ content: `## Item ${i}\nthrottle-term content item number ${i}`, title: `t${i}` });
+      db.index({ client: C, content: `## Item ${i}\nthrottle-term content item number ${i}`, title: `t${i}` });
     }
 
     const session = 'throttle-b';
     // Burn first 3 calls
     for (let i = 0; i < 3; i++) {
-      db.search({ query: 'throttle-term', sessionId: session });
+      db.search({ client: C, query: 'throttle-term', sessionId: session });
     }
     // Calls 4-8
     for (let call = 4; call <= 8; call++) {
-      const res = db.search({ query: 'throttle-term', sessionId: session });
+      const res = db.search({ client: C, query: 'throttle-term', sessionId: session });
       expect(Array.isArray(res)).toBe(true);
       expect((res as KbSearchResult[]).length).toBeLessThanOrEqual(1);
     }
@@ -181,19 +183,19 @@ describe('KnowledgeDB', () => {
     const session = 'throttle-c';
     // Burn 8 calls
     for (let i = 0; i < 8; i++) {
-      db.search({ query: 'anything', sessionId: session });
+      db.search({ client: C, query: 'anything', sessionId: session });
     }
     // Call 9
-    const res = db.search({ query: 'anything', sessionId: session });
+    const res = db.search({ client: C, query: 'anything', sessionId: session });
     expect(isThrottleBlock(res)).toBe(true);
   });
 
   it('ThrottleBlock has blocked: true and redirect: satori_exec', () => {
     const session = 'throttle-d';
     for (let i = 0; i < 8; i++) {
-      db.search({ query: 'x', sessionId: session });
+      db.search({ client: C, query: 'x', sessionId: session });
     }
-    const res = db.search({ query: 'x', sessionId: session }) as ThrottleBlock;
+    const res = db.search({ client: C, query: 'x', sessionId: session }) as ThrottleBlock;
     expect(res.blocked).toBe(true);
     expect(res.redirect).toBe('satori_exec');
     expect(typeof res.message).toBe('string');
@@ -206,13 +208,13 @@ describe('KnowledgeDB', () => {
 
     // Exhaust session A
     for (let i = 0; i < 8; i++) {
-      db.search({ query: 'x', sessionId: sessionA });
+      db.search({ client: C, query: 'x', sessionId: sessionA });
     }
-    const resA = db.search({ query: 'x', sessionId: sessionA });
+    const resA = db.search({ client: C, query: 'x', sessionId: sessionA });
     expect(isThrottleBlock(resA)).toBe(true);
 
     // Session B is still fresh
-    const resB = db.search({ query: 'x', sessionId: sessionB });
+    const resB = db.search({ client: C, query: 'x', sessionId: sessionB });
     expect(isThrottleBlock(resB)).toBe(false);
   });
 
@@ -230,7 +232,7 @@ describe('KnowledgeDB', () => {
     globalThis.fetch = mockFetch as unknown as typeof fetch;
 
     try {
-      const result = await db.fetchAndIndex({ url: 'https://example.com/missing' });
+      const result = await db.fetchAndIndex({ client: C, url: 'https://example.com/missing' });
       expect(result).toHaveProperty('error');
       expect((result as { error: string }).error).toMatch(/404/);
     } finally {
@@ -244,7 +246,7 @@ describe('KnowledgeDB', () => {
     globalThis.fetch = mockFetch as unknown as typeof fetch;
 
     try {
-      const result = await db.fetchAndIndex({ url: 'https://example.com/page' });
+      const result = await db.fetchAndIndex({ client: C, url: 'https://example.com/page' });
       expect(result).toHaveProperty('error');
     } finally {
       globalThis.fetch = original;
@@ -269,14 +271,14 @@ describe('KnowledgeDB', () => {
 
     try {
       const result = await db.fetchAndIndex({
-        url: 'https://example.com/page',
+        client: C, url: 'https://example.com/page',
         title: 'Test Page',
       });
       expect(result).toHaveProperty('indexed');
       expect((result as { indexed: number }).indexed).toBeGreaterThan(0);
 
       // Now search for content from the page
-      const searchRes = db.search({ query: 'mammoth', sessionId: 'fetch-test' }) as KbSearchResult[];
+      const searchRes = db.search({ client: C, query: 'mammoth', sessionId: 'fetch-test' }) as KbSearchResult[];
       expect(Array.isArray(searchRes)).toBe(true);
       expect(searchRes.length).toBeGreaterThan(0);
       // Script content should NOT be in the index

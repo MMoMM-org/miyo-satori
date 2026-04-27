@@ -11,6 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { loadConfig } from './config/loader.js';
 import { autoRegisterMcpJson } from './config/auto-register.js';
 import { resolveStorageDir, resolveFilePath } from './config/storage.js';
+import { resolveClient } from './config/client.js';
 import { ServerRegistry } from './gateway/registry.js';
 import { ToolCatalog } from './gateway/catalog.js';
 import { GatewayRouter } from './gateway/router.js';
@@ -36,6 +37,8 @@ import { BuiltinServer } from './execution/builtin-server.js';
 interface ParsedFlags {
   root?: string;
   storage?: string;
+  client?: string;
+  sessionId?: string;
 }
 
 function parseFlags(argv: string[]): ParsedFlags {
@@ -45,6 +48,10 @@ function parseFlags(argv: string[]): ParsedFlags {
       out.root = argv[++i];
     } else if ((argv[i] === '--storage' || argv[i] === '--project') && i + 1 < argv.length) {
       out.storage = argv[++i];
+    } else if (argv[i] === '--client' && i + 1 < argv.length) {
+      out.client = argv[++i];
+    } else if (argv[i] === '--session-id' && i + 1 < argv.length) {
+      out.sessionId = argv[++i];
     }
   }
   return out;
@@ -64,12 +71,29 @@ async function main() {
 
   // Storage location: CLI flag → toml setting → default repo-local
   const storageDir = resolveStorageDir({ storage: flags.storage }, config, repoRoot);
+  // Client identifier: CLI flag → toml setting → basename(repoRoot)
+  const client = resolveClient({ client: flags.client }, config, repoRoot);
+  // Default session-id for tool-calls: --session-id flag → env-var → synthetic.
+  // Synthetic IDs change per process, so cross-restart capture lookups break;
+  // surface this with a warning so operators can wire up the real session id.
+  let defaultSessionId: string;
+  if (flags.sessionId) {
+    defaultSessionId = flags.sessionId;
+  } else if (process.env.CLAUDE_SESSION_ID) {
+    defaultSessionId = process.env.CLAUDE_SESSION_ID;
+  } else {
+    defaultSessionId = `satori-pid-${process.pid}`;
+    process.stderr.write(
+      '[satori] warning: no --session-id and no $CLAUDE_SESSION_ID — using synthetic session id ' +
+        `"${defaultSessionId}". Captures from prior restarts will not be visible.\n`,
+    );
+  }
 
   // Infrastructure
   const dbPath = resolveFilePath(storageDir, config.context?.db_path, 'db.sqlite');
   const sessionDb = new SessionDB(dbPath);
   const contentDb = new ContentDB(dbPath);
-  contentDb.pruneOlderThan(config.context?.retain_days ?? 30);
+  contentDb.pruneOlderThan(client, config.context?.retain_days ?? 30);
   const auditLog = new AuditLog(
     resolveFilePath(storageDir, config.security?.audit_log, 'scanner.log'),
   );
@@ -79,7 +103,7 @@ async function main() {
     resolveFilePath(storageDir, config.context?.kb_path, 'kb.sqlite'),
   );
   const executor = new PolyglotExecutor();
-  const builtinServer = new BuiltinServer(executor, knowledgeDb);
+  const builtinServer = new BuiltinServer(executor, knowledgeDb, client);
 
   // Kairn backend warning
   if (config.context?.backend === 'kairn') {
@@ -120,16 +144,18 @@ async function main() {
     auditLog,
     contentDb,
     builtinServer,
+    client,
+    defaultSessionId,
     getClient: (name) => lifecycle.getClient(name),
   });
 
   // Register all 6 tools
-  registerSatoriContext(server, sessionDb, contentDb);
+  registerSatoriContext(server, sessionDb, contentDb, client, defaultSessionId);
   registerSatoriManage(server, registry, repoRoot);
   registerSatoriFind(server, catalog, lifecycle);
   registerSatoriSchema(server, catalog);
   registerSatoriExec(server, router);
-  registerSatoriKb(server, knowledgeDb);
+  registerSatoriKb(server, knowledgeDb, client);
 
   // Connect
   const transport = new StdioServerTransport();

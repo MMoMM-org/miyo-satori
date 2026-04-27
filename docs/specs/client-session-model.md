@@ -71,6 +71,8 @@ same string.
 |---|---|
 | No `session_id` arg | Return latest resume for `client = currentClient` (any session within this client) — solves fresh-start blindness |
 | Explicit `session_id` | Return that specific session's resume; require it to belong to current `client` (refuse cross-tenant reads) |
+**note:** if we have no session_id we should return not all from the client. it should be the latest X records.. plus an information to ask for more if neccessary
+question would be what is X...
 
 `satori_context(query)` gains an analogous filter: default `client =
 currentClient`, optional override.
@@ -124,7 +126,7 @@ Add `client TEXT NOT NULL DEFAULT ''` to:
 - `captures` (ContentDB) — also revise indexes/queries
 - `session_events` (SessionDB)
 - `session_meta` (SessionDB) — change PRIMARY KEY to `(client, session_id)`
-- `session_resumes` (SessionDB) — change PRIMARY KEY to `(client, session_id)`
+- `session_resume` (SessionDB) — change UNIQUE constraint to `(client, session_id)`
 - `chunks` (KnowledgeDB)
 
 No migration code: pre-release. Users (= us) wipe and recreate.
@@ -168,7 +170,7 @@ No migration code: pre-release. Users (= us) wipe and recreate.
 
 ### Phase 2 — Schema + plumbing
 - Add `client` column to all five tables. Drop+recreate (no migration).
-- Update PRIMARY KEYs on `session_meta` and `session_resumes`.
+- Update PRIMARY KEY on `session_meta` and UNIQUE constraint on `session_resume` to `(client, session_id)`.
 - Plumb `client` through every `insert*` / `getBy*` / `search` call site.
 - Update all 30+ existing tests that pass empty/missing client.
 

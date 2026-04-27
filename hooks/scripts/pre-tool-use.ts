@@ -1,6 +1,6 @@
 import { SessionDB } from '../../src/context/session-db.js';
 import { extractEvent } from '../../src/context/extract.js';
-import { extractSessionId, getRepoRoot, readStdinPayload } from './utils.js';
+import { extractSessionId, getRepoRoot, readStdinPayload, resolveHookPaths } from './utils.js';
 
 function extractBashCommand(toolInput: unknown): string | null {
   try {
@@ -26,12 +26,18 @@ async function main(): Promise<void> {
   const payload = readStdinPayload();
   const sessionId = extractSessionId(payload);
   const repoRoot = getRepoRoot();
-  const dbPath = SessionDB.defaultDBPath(repoRoot);
+
+  // Guard: exit 0 silently if Satori is not configured for this repo
+  const paths = resolveHookPaths(repoRoot);
+  if (!paths) {
+    process.exit(0);
+  }
+  const { dbPath, client } = paths;
 
   let sessionDb: SessionDB | null = null;
   try {
     sessionDb = new SessionDB(dbPath);
-    sessionDb.ensureSession(sessionId, repoRoot);
+    sessionDb.ensureSession(client, sessionId, repoRoot);
 
     const toolName = payload.tool_name ?? '';
     const toolInput = payload.tool_input;
@@ -40,12 +46,12 @@ async function main(): Promise<void> {
       const cmd = extractBashCommand(toolInput);
       if (cmd !== null) {
         if (cmd.includes('git ')) {
-          sessionDb.insertEvent(sessionId, 'git_op', 'git', 2, cmd.slice(0, 200), 'PreToolUse');
+          sessionDb.insertEvent(client, sessionId, 'git_op', 'git', 2, cmd.slice(0, 200), 'PreToolUse');
         }
         if (cmd.includes('cd ')) {
           const cdMatch = cmd.match(/cd\s+(\S+)/);
           const dir = cdMatch ? cdMatch[1] : cmd.slice(0, 200);
-          sessionDb.insertEvent(sessionId, 'cwd_change', 'cwd', 3, dir.slice(0, 200), 'PreToolUse');
+          sessionDb.insertEvent(client, sessionId, 'cwd_change', 'cwd', 3, dir.slice(0, 200), 'PreToolUse');
         }
       }
     } else if (toolName === 'Read' || toolName === 'Grep') {
@@ -54,6 +60,7 @@ async function main(): Promise<void> {
         const event = extractEvent(toolName, toolInput);
         if (event) {
           sessionDb.insertEvent(
+            client,
             sessionId,
             event.type,
             event.category,
