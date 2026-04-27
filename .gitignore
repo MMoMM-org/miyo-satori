@@ -11,3 +11,5 @@ satori/
 /begin-code.sh
 .mcp.json
 /generated-images/
+_inbox/
+_outbox/
